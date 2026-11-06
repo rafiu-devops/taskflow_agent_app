@@ -9,10 +9,12 @@ export interface AiConfig {
 export function getAiConfig(): AiConfig | null {
   const apiKey = process.env.AI_API_KEY?.trim();
   if (!apiKey) return null;
+  const baseUrl = (process.env.AI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta/openai/")
+    .replace(/\/+$/, "");
   return {
     apiKey,
-    baseUrl: (process.env.AI_API_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, ""),
-    model: process.env.AI_MODEL?.trim() || "gpt-4o-mini",
+    baseUrl,
+    model: process.env.AI_MODEL?.trim() || "gemini-3.1-flash-lite",
   };
 }
 

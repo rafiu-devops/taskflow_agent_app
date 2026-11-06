@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   });
 
   if (!isAiConfigured()) {
-    const content = "TaskFlow AI is not configured on the agent server. An administrator must set AI_API_KEY (and optionally AI_API_BASE_URL / AI_MODEL) before the agent can respond.";
+    const content = "TaskFlow AI is not configured on the agent server. An administrator must set AI_API_KEY (and optionally AI_BASE_URL / AI_MODEL) before the agent can respond.";
     conversation = await appendMessage(conversation.id, user.email, {
       role: "assistant",
       content,

@@ -27,7 +27,16 @@ Browser → TaskFlow AI Agent PWA (this app)
 
 - Node.js 20+
 - Existing management app running (default `http://localhost:3000`)
-- Optional for live AI answers: `AI_API_KEY` (OpenAI-compatible provider)
+- Optional for live AI answers: a Google AI Studio key (Gemini), used only server-side
+
+## Gemini free-tier setup
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey) and create an API key.
+2. Keep it local — put it in `.env.local`, never in committed files.
+3. The default configuration uses Gemini's OpenAI-compatible endpoint and a free-tier flash-lite model with function-calling support:
+   - `AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/`
+   - `AI_MODEL=gemini-3.1-flash-lite`
+4. Gemini free tier has per-minute and per-day rate limits; if you hit them, the agent surfaces a clear rate-limit error instead of fabricating results. Availability/quotas can change, so check AI Studio pricing/quota pages for your project.
 
 ## Setup
 
@@ -52,9 +61,10 @@ Then open `http://localhost:3001`.
 ```env
 MANAGEMENT_APP_URL=http://localhost:3000
 # Optional — without it the UI works but the agent replies with a clear "not configured" message.
-AI_API_KEY=your-provider-key
-AI_API_BASE_URL=https://api.openai.com/v1
-AI_MODEL=gpt-4o-mini
+# Get a free key at https://aistudio.google.com/apikey
+AI_API_KEY=your-google-ai-studio-key
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+AI_MODEL=gemini-3.1-flash-lite
 ```
 
 ## Auth flow
@@ -112,3 +122,4 @@ See:
 - Conversation store on local disk; use a database for multi-instance hosting.
 - Voice input requires a browser with the Web Speech API (Chrome/Edge); falls back gracefully otherwise.
 - External AI answers require `AI_API_KEY`; without it the app stays fully navigable but the agent returns a configuration error instead of fabricated answers.
+- Gemini free tier is quota/rate-limited; heavy or concurrent use may hit limits. Use a paid tier or a different model if you need higher throughput.

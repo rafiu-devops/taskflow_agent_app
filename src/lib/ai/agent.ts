@@ -80,7 +80,7 @@ export interface AgentRunResult {
 export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promise<AgentRunResult> {
   const config = getAiConfig();
   if (!config) {
-    throw new AgentProviderError("TaskFlow AI is not configured. Set AI_API_KEY (and optionally AI_API_BASE_URL / AI_MODEL) on the agent server.", 503);
+    throw new AgentProviderError("TaskFlow AI is not configured. Set AI_API_KEY (and optionally AI_BASE_URL / AI_MODEL) on the agent server.", 503);
   }
 
   const tools = buildToolDefinitions(user);
