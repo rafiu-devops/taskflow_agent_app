@@ -5,3 +5,4 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireAgentUser();
   return <AppShell user={user}>{children}</AppShell>;
 }
+

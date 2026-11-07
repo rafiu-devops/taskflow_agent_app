@@ -1,17 +1,23 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: light;
+  --bg: #F6F8FB;
+  --surface: #FFFFFF;
+  --ink: #0B1220;
+  --ink-muted: #5B6577;
+  --border: #E3E8EF;
+  --brand: #0A84FF;
+}
+
 @theme {
-  --color-background: #EAF4FA;
-  --color-foreground: #071426;
-  --color-surface: #FFFFFF;
-  --color-navy: #071426;
-  --color-navy-soft: #0D2138;
-  --color-primary: #087BFF;
-  --color-primary-soft: #E3F0FF;
-  --color-cyan: #44D9E8;
-  --color-muted: #78869A;
-  --color-line: #D8E4EE;
-  --font-sans: var(--font-geist-sans);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --font-sans: var(--font-geist-sans), "Noto Nastaliq Urdu", "Noto Sans Arabic", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -22,10 +28,7 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% 10%, rgba(68, 217, 232, 0.45), transparent 35%),
-    radial-gradient(circle at 85% 0%, rgba(8, 123, 255, 0.16), transparent 40%),
-    var(--color-background);
+  background: var(--color-background);
   color: var(--color-foreground);
 }
 
@@ -43,6 +46,13 @@ button, a, input, textarea, select {
   outline-offset: 2px;
 }
 
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+label:focus-visible {
+  outline: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -51,3 +61,4 @@ button, a, input, textarea, select {
     scroll-behavior: auto !important;
   }
 }
+

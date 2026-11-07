@@ -21,3 +21,4 @@ export function getAiConfig(): AiConfig | null {
 export function isAiConfigured(): boolean {
   return Boolean(process.env.AI_API_KEY?.trim());
 }
+

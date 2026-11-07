@@ -2,12 +2,38 @@ import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
 import { newId, ownerHash } from "@/lib/auth/server";
-import type { ChatCard, Conversation, ConversationSummary } from "@/types/agent";
+import type { ChatMessage, Conversation, ConversationSummary, MessagePart, TextPart } from "@/types/agent";
 
 const DEFAULT_DATA_FILE = path.join(process.cwd(), "data", "conversations.json");
 const MAX_MESSAGES = 200;
 
 let writeQueue: Promise<void> = Promise.resolve();
+
+function normalizeMessage(message: unknown): ChatMessage {
+  const m = (message && typeof message === "object" ? message : {}) as Record<string, unknown>;
+  if (Array.isArray(m.parts)) {
+    return {
+      id: String(m.id ?? newId("msg")),
+      role: m.role === "assistant" ? "assistant" : "user",
+      parts: m.parts as MessagePart[],
+      createdAt: typeof m.createdAt === "number" ? m.createdAt : Date.parse(String(m.createdAt ?? "")) || Date.now(),
+    };
+  }
+  const text = typeof m.content === "string" ? m.content : "";
+  const parts: MessagePart[] = text ? [{ type: "text", text }] : [];
+  if (Array.isArray(m.cards)) {
+    for (const card of m.cards as unknown[]) {
+      const c = (card && typeof card === "object" ? card : {}) as Record<string, unknown>;
+      parts.push({ type: "tool-result", id: String(c.id ?? newId("tool")), tool: String(c.type ?? "unknown"), state: "done", output: c });
+    }
+  }
+  return {
+    id: String(m.id ?? newId("msg")),
+    role: m.role === "assistant" ? "assistant" : "user",
+    parts,
+    createdAt: typeof m.createdAt === "number" ? m.createdAt : Date.parse(String(m.createdAt ?? "")) || Date.now(),
+  };
+}
 
 function dataFile(): string {
   return process.env.CONVERSATION_DATA_FILE || DEFAULT_DATA_FILE;
@@ -17,7 +43,11 @@ async function readConversations(): Promise<Conversation[]> {
   try {
     const raw = await fs.readFile(/* turbopackIgnore: true */ dataFile(), "utf8");
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as Conversation[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as Conversation[]).map((conversation) => ({
+      ...conversation,
+      messages: (conversation.messages ?? []).map((message: unknown) => normalizeMessage(message)),
+    }));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     console.error("Unable to read conversation store", error);
@@ -51,7 +81,7 @@ function toSummary(conversation: Conversation): ConversationSummary {
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     messageCount: conversation.messages.length,
-    lastMessage: last?.content.slice(0, 140),
+    lastMessage: last?.parts.filter((part): part is TextPart => part.type === "text").map((part) => part.text).join(" ").slice(0, 140),
   };
 }
 
@@ -93,7 +123,7 @@ export async function createConversation(ownerEmail: string, title = "New conver
 export async function appendMessage(
   id: string,
   ownerEmail: string,
-  message: { role: "user" | "assistant"; content: string; cards?: ChatCard[] },
+  message: { role: "user" | "assistant"; parts: MessagePart[] },
 ): Promise<Conversation> {
   const ownerId = ownerHash(ownerEmail);
   return withWriteLock(async () => {
@@ -101,17 +131,18 @@ export async function appendMessage(
     const index = conversations.findIndex((item) => item.id === id && item.ownerId === ownerId);
     if (index < 0) throw new Error("Conversation not found");
     const conversation = conversations[index];
+    const now = Date.now();
     const nextMessage = {
       id: newId("msg"),
       role: message.role,
-      content: message.content,
-      cards: message.cards,
-      createdAt: new Date().toISOString(),
+      parts: message.parts,
+      createdAt: now,
     };
     conversation.messages = [...conversation.messages, nextMessage].slice(-MAX_MESSAGES);
-    conversation.updatedAt = nextMessage.createdAt;
+    conversation.updatedAt = new Date(now).toISOString();
     if (conversation.title === "New conversation" && message.role === "user") {
-      conversation.title = message.content.trim().replace(/\s+/g, " ").slice(0, 64) || "New conversation";
+      const text = message.parts.filter((part): part is TextPart => part.type === "text").map((part) => part.text).join(" ").trim();
+      conversation.title = text.replace(/\s+/g, " ").slice(0, 64) || "New conversation";
     }
     conversations[index] = conversation;
     await writeConversations(conversations);
@@ -143,3 +174,4 @@ export async function deleteConversation(id: string, ownerEmail: string): Promis
     return true;
   });
 }
+

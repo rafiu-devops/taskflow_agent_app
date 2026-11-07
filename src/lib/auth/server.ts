@@ -85,3 +85,4 @@ export function ownerHash(email: string): string {
 export function newId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
 }
+

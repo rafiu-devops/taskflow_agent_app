@@ -23,3 +23,4 @@ export const createConversationSchema = z.object({
 export const renameConversationSchema = z.object({
   title: z.string().trim().min(1, "Title cannot be empty").max(80, "Title is too long"),
 });
+

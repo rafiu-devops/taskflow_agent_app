@@ -21,3 +21,4 @@ export function formatDate(value: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
 }
+

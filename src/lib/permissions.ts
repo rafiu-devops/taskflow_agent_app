@@ -13,3 +13,4 @@ export function hasAnyPermission(user: AgentUser | null | undefined, permissions
 export function isActiveEmployee(user: AgentUser | null | undefined): boolean {
   return Boolean(user);
 }
+

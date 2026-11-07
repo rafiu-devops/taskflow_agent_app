@@ -1,7 +1,5 @@
-import HomeClient from "@/components/home/HomeClient";
-import { requireAgentUser } from "@/lib/auth/server";
+import { redirect } from "next/navigation";
 
-export default async function HomePage() {
-  const user = await requireAgentUser();
-  return <HomeClient user={user} />;
+export default function HomePage() {
+  redirect("/chat");
 }

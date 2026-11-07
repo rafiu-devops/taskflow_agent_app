@@ -6,3 +6,4 @@ export default async function NewChatPage({ searchParams }: { searchParams: Prom
   const { prompt } = await searchParams;
   return <ChatClient user={user} conversationId={null} initialPrompt={prompt ?? null} />;
 }
+

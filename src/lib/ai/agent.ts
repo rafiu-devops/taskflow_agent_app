@@ -2,7 +2,7 @@ import "server-only";
 import { getAiConfig } from "@/lib/ai/config";
 import { buildToolDefinitions, executeTool } from "@/lib/ai/tools";
 import { systemPrompt } from "@/lib/ai/prompts";
-import type { AgentUser, ChatCard, ChatMessage } from "@/types/agent";
+import type { AgentUser, ChatMessage, MessagePart, TextPart, ToolResultPart } from "@/types/agent";
 
 interface OpenAiToolCall {
   id: string;
@@ -39,10 +39,18 @@ function providerMessage(status: number, payload: OpenAiChatResponse | null): st
   return provider ? "The AI provider returned an error." : "Unable to reach the AI provider.";
 }
 
+function messageText(message: ChatMessage): string {
+  return message.parts
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
 function historyFor(messages: ChatMessage[]): OpenAiMessage[] {
-  return messages.slice(-16).map((message) => ({
+  return messages.slice(-20).map((message) => ({
     role: message.role,
-    content: message.content,
+    content: messageText(message) || null,
   }));
 }
 
@@ -73,8 +81,7 @@ async function callProvider(apiKey: string, baseUrl: string, model: string, mess
 }
 
 export interface AgentRunResult {
-  content: string;
-  cards: ChatCard[];
+  parts: MessagePart[];
 }
 
 export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promise<AgentRunResult> {
@@ -89,18 +96,22 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
     ...historyFor(messages),
   ];
 
-  const cards: ChatCard[] = [];
+  const parts: MessagePart[] = [];
   let lastAssistant: OpenAiMessage | null = null;
 
   for (let iteration = 0; iteration < 4; iteration += 1) {
     const assistant = await callProvider(config.apiKey, config.baseUrl, config.model, history, tools);
     lastAssistant = assistant;
 
+    if (assistant.content?.trim()) {
+      parts.push({ type: "text", text: assistant.content.trim() });
+    }
+
     if (!assistant.tool_calls?.length) {
-      return {
-        content: assistant.content?.trim() || "I’m not sure how to respond to that yet.",
-        cards: cards.slice(0, 4),
-      };
+      if (!parts.length) {
+        parts.push({ type: "text", text: "I’m not sure how to respond to that yet." });
+      }
+      return { parts };
     }
 
     history.push({
@@ -117,7 +128,19 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
         args = {};
       }
       const result = await executeTool(call.function.name, args, { user });
-      if (result.card) cards.push(result.card);
+      const toolResult: ToolResultPart = {
+        type: "tool-result",
+        id: call.id,
+        tool: call.function.name,
+        state: result.ok ? "done" : "error",
+        input: args,
+        output: result.data ?? (result.card ? { card: result.card } : undefined),
+        error: result.ok ? undefined : { message: result.message, retryable: true },
+      };
+      if (result.card) {
+        toolResult.output = { ...(typeof toolResult.output === "object" && toolResult.output ? toolResult.output : {}), card: result.card };
+      }
+      parts.push(toolResult);
       history.push({
         role: "tool",
         tool_call_id: call.id,
@@ -131,8 +154,9 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
     }
   }
 
-  return {
-    content: lastAssistant?.content?.trim() || "I completed the tool checks, but could not assemble a final answer. Please try rephrasing your request.",
-    cards: cards.slice(0, 4),
-  };
+  if (!parts.length) {
+    parts.push({ type: "text", text: lastAssistant?.content?.trim() || "I completed the tool checks, but could not assemble a final answer. Please try rephrasing your request." });
+  }
+  return { parts };
 }
+

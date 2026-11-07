@@ -11,15 +11,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Enter a valid work email" }, { status: 400 });
   }
 
-  const managementResponse = await fetch(`${managementAppUrl()}/api/auth/signin`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({ email }),
-    cache: "no-store",
-  });
+  let managementResponse: Response;
+  try {
+    managementResponse = await fetch(`${managementAppUrl()}/api/auth/signin`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({ email }),
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Management service is unavailable. Start the management app or check MANAGEMENT_APP_URL." },
+      { status: 503 },
+    );
+  }
 
   const data = await managementResponse.json().catch(() => ({ error: "Sign-in failed" }));
   const response = NextResponse.json(data, { status: managementResponse.status });
@@ -29,3 +37,4 @@ export async function POST(request: Request) {
   }
   return response;
 }
+

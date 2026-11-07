@@ -77,3 +77,4 @@ export function useSpeechRecognition(onFinalText: (text: string) => void) {
 
   return { listening, error, start, stop };
 }
+

@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { managementJson } from "@/lib/auth/server";
 import { hasPermission } from "@/lib/permissions";
+import { createProposal } from "@/lib/agent/proposals";
 import {
   compareTaskDate,
   isTaskOverdue,
@@ -384,6 +385,107 @@ async function getActivityLogs(user: AgentUser, rawArgs: unknown): Promise<ToolE
   return { ok: true, message: `Loaded ${logs.length} recent log entr${logs.length === 1 ? "y" : "ies"}.`, data: { scope: result.data.scope, logs } };
 }
 
+async function proposeAssignTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  const args = createTaskSchema.parse(asRecord(rawArgs));
+  if (!hasPermission(user, "TASKS_CREATE")) {
+    return { ok: false, permissionRequired: "TASKS_CREATE", message: "You do not have permission to create tasks." };
+  }
+  if (user.role !== "admin" && (args.assignedTo || args.assignee) && !hasPermission(user, "TASKS_ASSIGN")) {
+    return { ok: false, permissionRequired: "TASKS_ASSIGN", message: "You do not have permission to assign tasks to other employees." };
+  }
+
+  const payload: Record<string, unknown> = {
+    title: args.title,
+    description: args.description ?? null,
+    priority: args.priority ?? "Medium",
+  };
+  if (args.dueDate) payload.dueDate = args.dueDate;
+  if (args.remarks) payload.remarks = args.remarks;
+
+  const assignee = args.assignedTo ?? args.assignee;
+  let assigneeName = user.name;
+  if (assignee) {
+    const resolved = await resolveEmployee(user, assignee);
+    if (!resolved.employee) {
+      return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
+    }
+    payload.assignedTo = resolved.employee.employeeId;
+    assigneeName = resolved.employee.fullName || resolved.employee.employeeId;
+    if (!args.departmentId && resolved.employee.departmentId) payload.departmentId = resolved.employee.departmentId;
+  } else if (user.role !== "admin") {
+    payload.assignedTo = user.employeeId;
+    if (user.departmentId) payload.departmentId = user.departmentId;
+  }
+
+  const departmentQuery = args.departmentId ?? args.department;
+  if (departmentQuery) {
+    if (/^dep-\d+$/i.test(departmentQuery)) {
+      payload.departmentId = departmentQuery.toUpperCase();
+    } else {
+      const resolved = await resolveDepartment(user, departmentQuery);
+      if (!resolved.department) return { ok: false, message: resolved.error ?? "Department not found or ambiguous.", data: resolved.candidates };
+      payload.departmentId = resolved.department.departmentId;
+    }
+  }
+
+  const summary = [
+    { label: "Title", value: String(payload.title) },
+    { label: "Assignee", value: assigneeName },
+    { label: "Due", value: String(payload.dueDate ?? "No due date") },
+    { label: "Priority", value: String(payload.priority) },
+  ];
+
+  const proposal = createProposal(user, "create_task", payload, summary);
+  return {
+    ok: true,
+    message: "Proposal created. Ask the user to confirm.",
+    data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() },
+  };
+}
+
+async function proposeUpdateTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  const args = updateTaskSchema.parse(asRecord(rawArgs));
+  const existing = await findTask(user, args.taskId);
+  if (!existing) return { ok: false, message: "Task not found or not visible to you." };
+
+  const payload: Record<string, unknown> = { taskId: existing.taskId };
+  if (args.title !== undefined) payload.title = args.title;
+  if (args.description !== undefined) payload.description = args.description;
+  if (args.priority !== undefined) payload.priority = args.priority;
+  if (args.status !== undefined) payload.status = args.status;
+  if (args.dueDate !== undefined) payload.dueDate = args.dueDate;
+  if (args.progressPercentage !== undefined) payload.progressPercentage = args.progressPercentage;
+  if (args.remarks !== undefined) payload.remarks = args.remarks;
+
+  const assignee = args.assignedTo ?? args.assignee;
+  if (assignee !== undefined) {
+    const resolved = await resolveEmployee(user, assignee);
+    if (!resolved.employee) return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
+    payload.assignedTo = resolved.employee.employeeId;
+  }
+  const departmentQuery = args.departmentId ?? args.department;
+  if (departmentQuery !== undefined) {
+    if (/^dep-\d+$/i.test(departmentQuery)) payload.departmentId = departmentQuery.toUpperCase();
+    else {
+      const resolved = await resolveDepartment(user, departmentQuery);
+      if (!resolved.department) return { ok: false, message: resolved.error ?? "Department not found or ambiguous.", data: resolved.candidates };
+      payload.departmentId = resolved.department.departmentId;
+    }
+  }
+
+  const summary = [{ label: "Task", value: `${existing.taskId}: ${existing.title}` }];
+  for (const [key, value] of Object.entries(payload)) {
+    if (key !== "taskId") summary.push({ label: key, value: String(value) });
+  }
+
+  const proposal = createProposal(user, "update_task", payload, summary);
+  return {
+    ok: true,
+    message: "Proposal created. Ask the user to confirm.",
+    data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() },
+  };
+}
+
 async function createTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
   const args = createTaskSchema.parse(asRecord(rawArgs));
   if (!hasPermission(user, "TASKS_CREATE")) {
@@ -584,7 +686,7 @@ export function buildToolDefinitions(user: AgentUser) {
     tools.push(tool("get_activity_logs", "Get recent activity/audit logs when permitted.", objectSchema({ limit: { type: "number", minimum: 1, maximum: 25 } })));
   }
   if (hasPermission(user, "TASKS_CREATE")) {
-    tools.push(tool("create_task", "Create a task. Use only after enough information is available; never invent IDs.", objectSchema({
+    tools.push(tool("propose_assign_task", "Propose creating/assigning a task. Does not write; user must confirm.", objectSchema({
       title: { type: "string" },
       description: { type: "string" },
       assignedTo: { type: "string", description: "Employee ID, email or full name." },
@@ -607,7 +709,7 @@ export function buildToolDefinitions(user: AgentUser) {
       "TASKS_ADD_REMARKS",
     ])
   ) {
-    tools.push(tool("update_task", "Update a visible task with the fields the user is allowed to change.", objectSchema({
+    tools.push(tool("propose_update_task", "Propose updating a visible task. Does not write; user must confirm.", objectSchema({
       taskId: { type: "string" },
       title: { type: "string" },
       description: { type: "string" },
@@ -638,6 +740,8 @@ const handlers: Record<string, ToolHandler> = {
   create_task: (args, { user }) => createTask(user, args),
   update_task: (args, { user }) => updateTask(user, args),
   complete_task: (args, { user }) => completeTask(user, args),
+  propose_assign_task: (args, { user }) => proposeAssignTask(user, args),
+  propose_update_task: (args, { user }) => proposeUpdateTask(user, args),
 };
 
 export async function executeTool(name: string, args: unknown, context: ToolContext): Promise<ToolExecutionResult> {
@@ -657,3 +761,4 @@ export async function executeTool(name: string, args: unknown, context: ToolCont
 export function publicToolNames(user: AgentUser): string[] {
   return buildToolDefinitions(user).map((definition) => definition.function.name);
 }
+

@@ -43,3 +43,4 @@ export function compareTaskDate(a?: string | null, b?: string | null): number {
   const right = String(b ?? "9999-12-31").slice(0, 10);
   return left.localeCompare(right);
 }
+

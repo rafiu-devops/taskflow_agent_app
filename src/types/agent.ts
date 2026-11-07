@@ -101,12 +101,23 @@ export type ChatCard =
   | ChatDepartmentsCard
   | ChatNoticeCard;
 
+export type TextPart = { type: "text"; text: string };
+export type ToolResultPart = {
+  type: "tool-result";
+  id: string;
+  tool: string;
+  state: "running" | "done" | "error";
+  input?: unknown;
+  output?: unknown;
+  error?: { message: string; retryable: boolean };
+};
+export type MessagePart = TextPart | ToolResultPart;
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
-  content: string;
-  cards?: ChatCard[];
-  createdAt: string;
+  parts: MessagePart[];
+  createdAt: number;
 }
 
 export interface Conversation {
@@ -122,3 +133,4 @@ export type ConversationSummary = Omit<Conversation, "messages"> & {
   messageCount: number;
   lastMessage?: string;
 };
+

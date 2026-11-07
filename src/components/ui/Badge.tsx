@@ -11,10 +11,11 @@ export default function Badge({ value, className = "" }: { value: string | null 
         ? "bg-rose-50 text-rose-700 ring-rose-600/15"
         : /medium|progress|pending|average/.test(status)
           ? "bg-amber-50 text-amber-800 ring-amber-600/15"
-          : "bg-slate-100 text-slate-600 ring-slate-500/10";
+          : "bg-[var(--border)] text-[var(--ink-muted)] ring-slate-500/10";
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset", tone, className)}>
       {label}
     </span>
   );
 }
+

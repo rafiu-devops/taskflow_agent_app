@@ -48,15 +48,17 @@ export async function POST(request: Request) {
 
   conversation = await appendMessage(conversation.id, user.email, {
     role: "user",
-    content: parsed.data.message,
+    parts: [{ type: "text", text: parsed.data.message }],
   });
 
   if (!isAiConfigured()) {
     const content = "TaskFlow AI is not configured on the agent server. An administrator must set AI_API_KEY (and optionally AI_BASE_URL / AI_MODEL) before the agent can respond.";
     conversation = await appendMessage(conversation.id, user.email, {
       role: "assistant",
-      content,
-      cards: [{ type: "notice", tone: "warning", title: "AI provider not configured", message: content }],
+      parts: [
+        { type: "text", text: content },
+        { type: "tool-result", id: "config", tool: "notice", state: "done", output: { card: { type: "notice", tone: "warning", title: "AI provider not configured", message: content } } },
+      ],
     });
     return NextResponse.json({
       conversationId: conversation.id,
@@ -70,8 +72,7 @@ export async function POST(request: Request) {
     const result = await runAgent(user, conversation.messages);
     conversation = await appendMessage(conversation.id, user.email, {
       role: "assistant",
-      content: result.content,
-      cards: result.cards,
+      parts: result.parts,
     });
     return NextResponse.json({
       conversationId: conversation.id,
@@ -84,8 +85,10 @@ export async function POST(request: Request) {
     console.error("Agent chat failed", error);
     conversation = await appendMessage(conversation.id, user.email, {
       role: "assistant",
-      content,
-      cards: [{ type: "notice", tone: "error", title: "Agent unavailable", message: content }],
+      parts: [
+        { type: "text", text: content },
+        { type: "tool-result", id: "error", tool: "notice", state: "error", error: { message: content, retryable: true }, output: { card: { type: "notice", tone: "error", title: "Agent unavailable", message: content } } },
+      ],
     });
     return NextResponse.json({
       conversationId: conversation.id,
@@ -95,3 +98,4 @@ export async function POST(request: Request) {
     }, { status });
   }
 }
+

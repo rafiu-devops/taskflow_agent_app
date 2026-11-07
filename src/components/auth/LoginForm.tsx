@@ -34,8 +34,8 @@ export default function LoginForm() {
     <form onSubmit={handleSubmit} className="mt-8 space-y-5">
       <label className="block">
         <span className="text-xs font-semibold text-foreground">Work email</span>
-        <div className="mt-2 flex items-center gap-2 rounded-2xl border border-line bg-[#F7FBFE] px-4 py-3 transition focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
-          <Mail className="h-4 w-4 text-muted" aria-hidden="true" />
+        <div className="mt-2 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[#F7FBFE] px-4 py-3 transition focus-within:border-primary focus-within:bg-[var(--surface)] focus-within:ring-4 focus-within:ring-sky-100">
+          <Mail className="h-4 w-4 text-[var(--ink-muted)]" aria-hidden="true" />
           <input
             type="email"
             name="email"
@@ -43,7 +43,7 @@ export default function LoginForm() {
             placeholder="you@company.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full bg-transparent text-sm text-navy outline-none placeholder:text-slate-400"
+            className="w-full bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-muted)]"
             required
           />
         </div>
@@ -56,7 +56,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-4 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-[#0670e8] disabled:cursor-not-allowed disabled:opacity-70"
+        className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-4 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-[#0670e8] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
         {loading ? "Verifying access..." : "Sign in securely"}
@@ -65,3 +65,4 @@ export default function LoginForm() {
     </form>
   );
 }
+

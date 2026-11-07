@@ -5,3 +5,4 @@ export default async function HistoryPage() {
   await requireAgentUser();
   return <HistoryClient />;
 }
+

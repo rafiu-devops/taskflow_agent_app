@@ -114,17 +114,17 @@ export default function HomeClient({ user }: { user: AgentUser }) {
         <div className="flex items-center gap-3">
           <MobileMenuButton />
           <div className="lg:hidden">
-            <p className="text-sm font-bold leading-5 text-navy">TaskFlow AI</p>
-            <p className="text-[11px] text-muted">Operations assistant</p>
+            <p className="text-sm font-bold leading-5 text-[var(--ink)]">TaskFlow AI</p>
+            <p className="text-[11px] text-[var(--ink-muted)]">Operations assistant</p>
           </div>
         </div>
-        <Link href="/settings" aria-label="Open settings" className="flex items-center gap-2 rounded-2xl bg-white p-1.5 pr-3 shadow-sm transition hover:bg-slate-50">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-navy text-xs font-bold text-cyan">{initials(user.name)}</div>
+        <Link href="/settings" aria-label="Open settings" className="flex items-center gap-2 rounded-2xl bg-[var(--surface)] p-1.5 pr-3 shadow-sm transition hover:bg-[var(--bg)]">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--ink)] text-xs font-bold text-[var(--surface)]">{initials(user.name)}</div>
           <div className="hidden text-left sm:block">
-            <p className="max-w-40 truncate text-xs font-bold text-navy">{user.name}</p>
-            <p className="text-[10px] capitalize text-muted">{user.role}</p>
+            <p className="max-w-40 truncate text-xs font-bold text-[var(--ink)]">{user.name}</p>
+            <p className="text-[10px] capitalize text-[var(--ink-muted)]">{user.role}</p>
           </div>
-          <Settings className="h-4 w-4 text-muted" aria-hidden="true" />
+          <Settings className="h-4 w-4 text-[var(--ink-muted)]" aria-hidden="true" />
         </Link>
       </header>
 
@@ -134,22 +134,22 @@ export default function HomeClient({ user }: { user: AgentUser }) {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: "easeOut" }}
-            className="overflow-hidden rounded-[2.5rem] bg-white p-6 shadow-[0_24px_60px_rgba(7,20,38,0.10)] sm:p-8"
+            className="overflow-hidden rounded-[2.5rem] bg-[var(--surface)] p-6 shadow-[0_24px_60px_rgba(7,20,38,0.10)] sm:p-8"
           >
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--brand)]">
               <Sparkles className="h-4 w-4" aria-hidden="true" /> TaskFlow Agent
             </div>
-            <h1 className="mt-3 text-3xl font-semibold leading-[1.08] tracking-tight text-navy sm:text-5xl">Talk with TaskFlow</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted">Assign work, ask for reports or check your tasks — in plain language.</p>
+            <h1 className="mt-3 text-3xl font-semibold leading-[1.08] tracking-tight text-[var(--ink)] sm:text-5xl">Talk with TaskFlow</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--ink-muted)]">Assign work, ask for reports or check your tasks — in plain language.</p>
 
             <form onSubmit={(event) => { event.preventDefault(); submitPrompt(prompt); }} className="mt-6">
-              <div className="flex items-center gap-2 rounded-[2rem] border border-line bg-[#F7FBFE] p-2 transition focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100">
+              <div className="flex items-center gap-2 rounded-[2rem] border border-[var(--border)] bg-[#F7FBFE] p-2 transition focus-within:border-primary focus-within:bg-[var(--surface)] focus-within:ring-4 focus-within:ring-sky-100">
                 <button
                   type="button"
                   onClick={speech.listening ? speech.stop : speech.start}
                   aria-label={speech.listening ? "Stop listening" : "Use microphone"}
                   aria-pressed={speech.listening}
-                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-full transition ${speech.listening ? "bg-rose-100 text-rose-600" : "text-muted hover:bg-slate-100"}`}
+                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-full transition ${speech.listening ? "bg-rose-100 text-rose-600" : "text-[var(--ink-muted)] hover:bg-[var(--border)]"}`}
                 >
                   <Mic className="h-5 w-5" aria-hidden="true" />
                 </button>
@@ -159,13 +159,13 @@ export default function HomeClient({ user }: { user: AgentUser }) {
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   placeholder="Write your prompt..."
-                  className="min-w-0 flex-1 bg-transparent text-sm text-navy outline-none placeholder:text-slate-400 sm:text-base"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-muted)] sm:text-base"
                 />
-                <button type="submit" aria-label="Send prompt" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary text-white shadow-lg shadow-sky-200 transition hover:bg-[#0670e8]">
+                <button type="submit" aria-label="Send prompt" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--brand)] text-white shadow-lg shadow-sky-200 transition hover:bg-[#0670e8]">
                   <Send className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
-              {speech.listening && <p className="mt-2 text-xs font-medium text-primary">Listening… speak now.</p>}
+              {speech.listening && <p className="mt-2 text-xs font-medium text-[var(--brand)]">Listening… speak now.</p>}
               {speech.error && <p role="alert" className="mt-2 text-xs text-rose-600">{speech.error}</p>}
             </form>
 
@@ -175,13 +175,13 @@ export default function HomeClient({ user }: { user: AgentUser }) {
                   key={action.label}
                   type="button"
                   onClick={() => submitPrompt(action.prompt)}
-                  className="rounded-full border border-line bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+                  className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink-muted)] shadow-sm transition hover:border-primary hover:text-[var(--brand)]"
                 >
                   {action.label}
                 </button>
               ))}
               {!quickActions.length && (
-                <span className="rounded-full border border-line bg-slate-50 px-4 py-2 text-xs text-muted">Your permissions don&apos;t enable quick actions yet.</span>
+                <span className="rounded-full border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs text-[var(--ink-muted)]">Your permissions don&apos;t enable quick actions yet.</span>
               )}
             </div>
           </motion.div>
@@ -189,8 +189,8 @@ export default function HomeClient({ user }: { user: AgentUser }) {
           <section>
             <div className="mb-3 flex items-end justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Explore</p>
-                <h2 className="mt-1 text-lg font-semibold text-navy">Features for you</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-muted)]">Explore</p>
+                <h2 className="mt-1 text-lg font-semibold text-[var(--ink)]">Features for you</h2>
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -201,45 +201,45 @@ export default function HomeClient({ user }: { user: AgentUser }) {
                     key={card.title}
                     type="button"
                     onClick={() => submitPrompt(card.prompt)}
-                    className="group rounded-3xl bg-navy p-5 text-left text-white transition hover:-translate-y-0.5 hover:bg-navy-soft"
+                    className="group rounded-3xl bg-[var(--ink)] p-5 text-left text-white transition hover:-translate-y-0.5 hover:bg-[var(--ink)]-soft"
                   >
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-cyan">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--surface)]/10 text-[var(--surface)]">
                       <Icon className="h-5 w-5" aria-hidden="true" />
                     </div>
                     <h3 className="mt-4 text-base font-semibold">{card.title}</h3>
                     <p className="mt-1 text-xs leading-5 text-slate-300">{card.desc}</p>
-                    <span className="mt-4 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-cyan">Open <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></span>
+                    <span className="mt-4 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-[var(--surface)]">Open <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></span>
                   </button>
                 );
               })}
               {!featureCards.length && (
-                <div className="rounded-3xl border border-dashed border-line bg-white/60 p-6 text-sm text-muted">No features are enabled for your account yet. Ask your administrator for access.</div>
+                <div className="rounded-3xl border border-dashed border-[var(--border)] bg-[var(--surface)]/60 p-6 text-sm text-[var(--ink-muted)]">No features are enabled for your account yet. Ask your administrator for access.</div>
               )}
             </div>
           </section>
         </section>
 
-        <aside className="h-fit overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-[0_24px_60px_rgba(7,20,38,0.08)] backdrop-blur">
-          <div className="flex items-center justify-between border-b border-line/70 p-5">
+        <aside className="h-fit overflow-hidden rounded-[2rem] border border-white/70 bg-[var(--surface)]/80 shadow-[0_24px_60px_rgba(7,20,38,0.08)] backdrop-blur">
+          <div className="flex items-center justify-between border-b border-[var(--border)]/70 p-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Recent</p>
-              <h2 className="mt-1 text-base font-semibold text-navy">Conversation history</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-muted)]">Recent</p>
+              <h2 className="mt-1 text-base font-semibold text-[var(--ink)]">Conversation history</h2>
             </div>
-            <Link href="/history" className="text-xs font-bold text-primary hover:underline">See all</Link>
+            <Link href="/history" className="text-xs font-bold text-[var(--brand)] hover:underline">See all</Link>
           </div>
           <div className="p-3">
             {historyError && <p role="alert" className="rounded-2xl bg-rose-50 p-3 text-xs text-rose-700">{historyError}</p>}
             {historyLoading ? (
-              <div className="space-y-2 p-2">{Array.from({ length: 4 }, (_, i) => <div key={i} className="h-14 animate-pulse rounded-2xl bg-slate-100" />)}</div>
+              <div className="space-y-2 p-2">{Array.from({ length: 4 }, (_, i) => <div key={i} className="h-14 animate-pulse rounded-2xl bg-[var(--border)]" />)}</div>
             ) : conversations.length ? (
               <ul className="divide-y divide-line/70">
                 {conversations.slice(0, 4).map((conversation) => (
                   <li key={conversation.id} className="flex items-center gap-2 py-2">
-                    <Link href={`/chat/${conversation.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-2 transition hover:bg-slate-50">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary-soft text-primary">TF</div>
+                    <Link href={`/chat/${conversation.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-2 transition hover:bg-[var(--bg)]">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--bg)] text-[var(--brand)]">TF</div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-navy">{conversation.title}</p>
-                        <p className="mt-0.5 text-[11px] text-muted">{conversation.messageCount} message{conversation.messageCount === 1 ? "" : "s"}</p>
+                        <p className="truncate text-sm font-semibold text-[var(--ink)]">{conversation.title}</p>
+                        <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">{conversation.messageCount} message{conversation.messageCount === 1 ? "" : "s"}</p>
                       </div>
                     </Link>
                     <ConversationMenu conversation={conversation} onChange={loadConversations} />
@@ -248,9 +248,9 @@ export default function HomeClient({ user }: { user: AgentUser }) {
               </ul>
             ) : (
               <div className="p-5 text-center">
-                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-sm font-bold text-slate-400">0</div>
-                <p className="mt-3 text-sm font-semibold text-navy">No conversations yet</p>
-                <p className="mt-1 text-xs leading-5 text-muted">Ask your first question to start building history.</p>
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-[var(--border)] text-sm font-bold text-[var(--ink-muted)]">0</div>
+                <p className="mt-3 text-sm font-semibold text-[var(--ink)]">No conversations yet</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--ink-muted)]">Ask your first question to start building history.</p>
               </div>
             )}
           </div>
@@ -259,3 +259,4 @@ export default function HomeClient({ user }: { user: AgentUser }) {
     </div>
   );
 }
+

@@ -1,5 +1,13 @@
 # Implementation Notes
 
+## Gemini integration
+
+- AI provider is configured server-side through `AI_API_KEY`, `AI_BASE_URL`, and `AI_MODEL`.
+- Defaults: Google AI Studio OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`) and `gemini-3.1-flash-lite`, which supports function calling and is offered on the Gemini free tier with rate limits.
+- Existing tool-calling architecture is preserved: Gemini only selects tools; the Node server executes them and re-checks management permissions/ownership before every backend call.
+- If `AI_API_KEY` is missing, the agent returns a clear configuration error, not fabricated data.
+- Free-tier availability/quotas can change; if `gemini-3.1-flash-lite` is not available to a project, switch `AI_MODEL` to another free-tier Gemini model with function-calling support listed in Google AI Studio.
+
 ## What was created
 
 - Next.js 16 App Router + TypeScript + Tailwind v4 application inside `taskflow_agent_app`.

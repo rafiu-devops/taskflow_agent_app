@@ -21,3 +21,4 @@ export async function POST(request: Request) {
   const conversation = await createConversation(user.email, parsed.data.title ?? "New conversation");
   return NextResponse.json({ conversation: { ...conversation, messages: undefined } }, { status: 201 });
 }
+
