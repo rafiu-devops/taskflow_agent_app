@@ -379,8 +379,8 @@ export default function ChatClient({ user, conversationId: initialConversationId
                       title={new Date(message.createdAt).toLocaleString()}
                     >
                       {isUser ? (
-                        <div className="rounded-2xl rounded-br-md bg-[var(--brand)] px-4 py-2.5 text-white">
-                          <p className="whitespace-pre-wrap" dir="auto">
+                        <div className="py-1 pl-8 pr-1 text-right">
+                          <p className="whitespace-pre-wrap font-medium text-[var(--ink)]" dir="auto">
                             {(message.parts ?? []).filter((part) => part.type === "text").map((part) => (part as { text: string }).text).join("\n")}
                           </p>
                         </div>

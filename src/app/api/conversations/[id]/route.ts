@@ -7,7 +7,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const user = await getManagementUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const conversation = await getConversation(id, user.email);
+  const conversation = await getConversation(id, user);
   if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   return NextResponse.json({ conversation });
 }
@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid title" }, { status: 400 });
   }
   try {
-    const conversation = await renameConversation(id, user.email, parsed.data.title);
+    const conversation = await renameConversation(id, user, parsed.data.title);
     return NextResponse.json({ conversation });
   } catch {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
@@ -33,7 +33,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const user = await getManagementUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const deleted = await deleteConversation(id, user.email);
+  const deleted = await deleteConversation(id, user);
   if (!deleted) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

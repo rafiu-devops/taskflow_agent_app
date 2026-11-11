@@ -6,7 +6,7 @@ import { createConversationSchema } from "@/lib/validation";
 export async function GET() {
   const user = await getManagementUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const conversations = await listConversations(user.email);
+  const conversations = await listConversations(user);
   return NextResponse.json({ conversations });
 }
 
@@ -18,7 +18,6 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid conversation title" }, { status: 400 });
   }
-  const conversation = await createConversation(user.email, parsed.data.title ?? "New conversation");
+  const conversation = await createConversation(user, parsed.data.title ?? "New conversation");
   return NextResponse.json({ conversation: { ...conversation, messages: undefined } }, { status: 201 });
 }
-

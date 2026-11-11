@@ -37,23 +37,23 @@ export async function POST(request: Request) {
   }
 
   let conversation = parsed.data.conversationId
-    ? await getConversation(parsed.data.conversationId, user.email)
+    ? await getConversation(parsed.data.conversationId, user)
     : null;
   if (parsed.data.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
   if (!conversation) {
-    conversation = await createConversation(user.email);
+    conversation = await createConversation(user);
   }
 
-  conversation = await appendMessage(conversation.id, user.email, {
+  conversation = await appendMessage(conversation.id, user, {
     role: "user",
     parts: [{ type: "text", text: parsed.data.message }],
   });
 
   if (!isAiConfigured()) {
     const content = "TaskFlow AI is not configured on the agent server. An administrator must set AI_API_KEY (and optionally AI_BASE_URL / AI_MODEL) before the agent can respond.";
-    conversation = await appendMessage(conversation.id, user.email, {
+    conversation = await appendMessage(conversation.id, user, {
       role: "assistant",
       parts: [
         { type: "text", text: content },
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAgent(user, conversation.messages);
-    conversation = await appendMessage(conversation.id, user.email, {
+    conversation = await appendMessage(conversation.id, user, {
       role: "assistant",
       parts: result.parts,
     });
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     const status = error instanceof AgentProviderError ? error.status : 502;
     const content = error instanceof Error ? error.message : "The agent is unavailable right now.";
     console.error("Agent chat failed", error);
-    conversation = await appendMessage(conversation.id, user.email, {
+    conversation = await appendMessage(conversation.id, user, {
       role: "assistant",
       parts: [
         { type: "text", text: content },

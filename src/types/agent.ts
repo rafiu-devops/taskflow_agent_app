@@ -123,6 +123,8 @@ export interface ChatMessage {
 export interface Conversation {
   id: string;
   ownerId: string;
+  ownerEmail?: string;
+  role?: UserRole;
   title: string;
   createdAt: string;
   updatedAt: string;

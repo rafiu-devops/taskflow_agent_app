@@ -1,177 +1,243 @@
 import "server-only";
-import { promises as fs } from "fs";
-import path from "path";
-import { newId, ownerHash } from "@/lib/auth/server";
-import type { ChatMessage, Conversation, ConversationSummary, MessagePart, TextPart } from "@/types/agent";
 
-const DEFAULT_DATA_FILE = path.join(process.cwd(), "data", "conversations.json");
+import { Timestamp, type DocumentSnapshot } from "firebase-admin/firestore";
+import { db } from "@/lib/firebaseAdmin";
+import { newId, ownerHash } from "@/lib/auth/server";
+import type { AgentUser } from "@/types/agent";
+import type {
+  ChatMessage,
+  Conversation,
+  ConversationSummary,
+  MessagePart,
+  TextPart,
+} from "@/types/agent";
+
+const COLLECTION = "taskflow_chats";
 const MAX_MESSAGES = 200;
 
-let writeQueue: Promise<void> = Promise.resolve();
+function toIso(value: unknown): string {
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "number") return new Date(value).toISOString();
+  return new Date().toISOString();
+}
 
-function normalizeMessage(message: unknown): ChatMessage {
-  const m = (message && typeof message === "object" ? message : {}) as Record<string, unknown>;
-  if (Array.isArray(m.parts)) {
-    return {
-      id: String(m.id ?? newId("msg")),
-      role: m.role === "assistant" ? "assistant" : "user",
-      parts: m.parts as MessagePart[],
-      createdAt: typeof m.createdAt === "number" ? m.createdAt : Date.parse(String(m.createdAt ?? "")) || Date.now(),
-    };
+function toMillis(value: unknown): number {
+  if (value instanceof Timestamp) return value.toMillis();
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Date.now() : parsed;
   }
-  const text = typeof m.content === "string" ? m.content : "";
-  const parts: MessagePart[] = text ? [{ type: "text", text }] : [];
-  if (Array.isArray(m.cards)) {
-    for (const card of m.cards as unknown[]) {
-      const c = (card && typeof card === "object" ? card : {}) as Record<string, unknown>;
-      parts.push({ type: "tool-result", id: String(c.id ?? newId("tool")), tool: String(c.type ?? "unknown"), state: "done", output: c });
-    }
+  if (value instanceof Date) return value.getTime();
+  return Date.now();
+}
+
+function normalizeFirestoreMessage(id: string, data: Record<string, unknown>): ChatMessage {
+  const role = data.role === "assistant" ? "assistant" : "user";
+  let parts: MessagePart[] = [];
+  if (Array.isArray(data.parts)) {
+    parts = data.parts as MessagePart[];
+  } else {
+    const text = typeof data.content === "string" ? data.content : "";
+    parts = text ? [{ type: "text", text }] : [];
   }
   return {
-    id: String(m.id ?? newId("msg")),
-    role: m.role === "assistant" ? "assistant" : "user",
+    id,
+    role,
     parts,
-    createdAt: typeof m.createdAt === "number" ? m.createdAt : Date.parse(String(m.createdAt ?? "")) || Date.now(),
+    createdAt: toMillis(data.timestamp ?? data.createdAt),
   };
 }
 
-function dataFile(): string {
-  return process.env.CONVERSATION_DATA_FILE || DEFAULT_DATA_FILE;
-}
-
-async function readConversations(): Promise<Conversation[]> {
-  try {
-    const raw = await fs.readFile(/* turbopackIgnore: true */ dataFile(), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return (parsed as Conversation[]).map((conversation) => ({
-      ...conversation,
-      messages: (conversation.messages ?? []).map((message: unknown) => normalizeMessage(message)),
-    }));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    console.error("Unable to read conversation store", error);
-    return [];
-  }
-}
-
-async function writeConversations(conversations: Conversation[]): Promise<void> {
-  const file = dataFile();
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(temp, JSON.stringify(conversations, null, 2), "utf8");
-  await fs.rename(temp, file);
-}
-
-function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
-  const run = writeQueue.then(operation, operation);
-  writeQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
-
-function toSummary(conversation: Conversation): ConversationSummary {
-  const last = conversation.messages[conversation.messages.length - 1];
+function summaryFromDoc(doc: DocumentSnapshot): ConversationSummary {
+  const data = (doc.data() ?? {}) as Record<string, unknown>;
+  const ownerId = String(data.ownerHash ?? "");
+  const content = typeof data.lastMessage === "string" ? data.lastMessage : undefined;
   return {
-    id: conversation.id,
-    ownerId: conversation.ownerId,
-    title: conversation.title,
-    createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt,
-    messageCount: conversation.messages.length,
-    lastMessage: last?.parts.filter((part): part is TextPart => part.type === "text").map((part) => part.text).join(" ").slice(0, 140),
+    id: doc.id,
+    ownerId,
+    ownerEmail: typeof data.ownerEmail === "string" ? data.ownerEmail : undefined,
+    role: data.role === "employee" ? "employee" : data.role === "admin" ? "admin" : undefined,
+    title: String(data.title ?? "New conversation"),
+    createdAt: toIso(data.createdAt),
+    updatedAt: toIso(data.updatedAt),
+    messageCount: typeof data.messageCount === "number" ? data.messageCount : 0,
+    lastMessage: content,
   };
 }
 
-export async function listConversations(ownerEmail: string): Promise<ConversationSummary[]> {
-  const ownerId = ownerHash(ownerEmail);
-  const conversations = await readConversations();
-  return conversations
-    .filter((conversation) => conversation.ownerId === ownerId)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map(toSummary);
+function textFromParts(parts: MessagePart[]): string {
+  return parts
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text)
+    .join(" ")
+    .trim();
 }
 
-export async function getConversation(id: string, ownerEmail: string): Promise<Conversation | null> {
-  const ownerId = ownerHash(ownerEmail);
-  const conversations = await readConversations();
-  const conversation = conversations.find((item) => item.id === id && item.ownerId === ownerId);
-  return conversation ?? null;
+export async function listConversations(user: AgentUser): Promise<ConversationSummary[]> {
+  const ownerId = ownerHash(user.email);
+  const snapshot = await db.collection(COLLECTION).where("ownerHash", "==", ownerId).get();
+  return snapshot.docs
+    .map((doc) => summaryFromDoc(doc))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function createConversation(ownerEmail: string, title = "New conversation"): Promise<Conversation> {
-  const ownerId = ownerHash(ownerEmail);
-  const now = new Date().toISOString();
-  const conversation: Conversation = {
-    id: newId("conv"),
-    ownerId,
+export async function getConversation(id: string, user: AgentUser): Promise<Conversation | null> {
+  const ownerId = ownerHash(user.email);
+  const ref = db.collection(COLLECTION).doc(id);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return null;
+  const data = (snapshot.data() ?? {}) as Record<string, unknown>;
+  if (data.ownerHash !== ownerId) return null;
+
+  const messagesSnapshot = await ref
+    .collection("messages")
+    .orderBy("timestamp", "asc")
+    .limit(MAX_MESSAGES)
+    .get();
+
+  const messages = messagesSnapshot.docs.map((doc) =>
+    normalizeFirestoreMessage(doc.id, (doc.data() ?? {}) as Record<string, unknown>),
+  );
+
+  return {
+    id: snapshot.id,
+    ownerId: String(data.ownerHash ?? ""),
+    ownerEmail: typeof data.ownerEmail === "string" ? data.ownerEmail : undefined,
+    role: data.role === "employee" ? "employee" : data.role === "admin" ? "admin" : undefined,
+    title: String(data.title ?? "New conversation"),
+    createdAt: toIso(data.createdAt),
+    updatedAt: toIso(data.updatedAt),
+    messages,
+  };
+}
+
+export async function createConversation(
+  user: AgentUser,
+  title = "New conversation",
+): Promise<Conversation> {
+  const ownerId = ownerHash(user.email);
+  const id = newId("conv");
+  const now = Timestamp.now();
+  await db.collection(COLLECTION).doc(id).set({
+    ownerHash: ownerId,
+    ownerEmail: user.email,
+    role: user.role,
     title,
     createdAt: now,
     updatedAt: now,
+    messageCount: 0,
+    lastMessage: null,
+  });
+
+  return {
+    id,
+    ownerId,
+    ownerEmail: user.email,
+    role: user.role,
+    title,
+    createdAt: now.toDate().toISOString(),
+    updatedAt: now.toDate().toISOString(),
     messages: [],
   };
-  return withWriteLock(async () => {
-    const conversations = await readConversations();
-    conversations.push(conversation);
-    await writeConversations(conversations);
-    return conversation;
-  });
 }
 
 export async function appendMessage(
   id: string,
-  ownerEmail: string,
+  user: AgentUser,
   message: { role: "user" | "assistant"; parts: MessagePart[] },
 ): Promise<Conversation> {
-  const ownerId = ownerHash(ownerEmail);
-  return withWriteLock(async () => {
-    const conversations = await readConversations();
-    const index = conversations.findIndex((item) => item.id === id && item.ownerId === ownerId);
-    if (index < 0) throw new Error("Conversation not found");
-    const conversation = conversations[index];
-    const now = Date.now();
-    const nextMessage = {
-      id: newId("msg"),
-      role: message.role,
-      parts: message.parts,
-      createdAt: now,
-    };
-    conversation.messages = [...conversation.messages, nextMessage].slice(-MAX_MESSAGES);
-    conversation.updatedAt = new Date(now).toISOString();
-    if (conversation.title === "New conversation" && message.role === "user") {
-      const text = message.parts.filter((part): part is TextPart => part.type === "text").map((part) => part.text).join(" ").trim();
-      conversation.title = text.replace(/\s+/g, " ").slice(0, 64) || "New conversation";
-    }
-    conversations[index] = conversation;
-    await writeConversations(conversations);
-    return conversation;
+  const ownerId = ownerHash(user.email);
+  const ref = db.collection(COLLECTION).doc(id);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) throw new Error("Conversation not found");
+  const data = (snapshot.data() ?? {}) as Record<string, unknown>;
+  if (data.ownerHash !== ownerId) throw new Error("Conversation not found");
+
+  const now = Timestamp.now();
+  const messageId = newId("msg");
+  const content = textFromParts(message.parts);
+  const currentTitle = String(data.title ?? "New conversation");
+  let nextTitle = currentTitle;
+  if (currentTitle === "New conversation" && message.role === "user") {
+    nextTitle = content.replace(/\s+/g, " ").slice(0, 64) || "New conversation";
+  }
+
+  const toolResult = message.parts.find(
+    (part): part is Extract<MessagePart, { type: "tool-result" }> => part.type === "tool-result",
+  );
+  const hasError = message.parts.some(
+    (part) => part.type === "tool-result" && (part as { state?: string }).state === "error",
+  );
+  const status = message.role === "assistant" ? (hasError ? "error" : "success") : undefined;
+
+  const cards = message.parts
+    .filter((part): part is Extract<MessagePart, { type: "tool-result" }> => part.type === "tool-result")
+    .map((part) => (part as { output?: { card?: unknown } }).output?.card)
+    .filter(Boolean);
+
+  const uiMetadata = cards.length > 0 ? { cards } : undefined;
+
+  await ref.collection("messages").doc(messageId).set({
+    role: message.role,
+    parts: message.parts,
+    content,
+    timestamp: now,
+    ...(toolResult ? { toolUsed: (toolResult as { tool?: string }).tool } : {}),
+    ...(status ? { status } : {}),
+    ...(uiMetadata ? { uiMetadata } : {}),
   });
+
+  const messageCount =
+    (typeof data.messageCount === "number" ? data.messageCount : 0) + 1;
+  const lastMessage = content
+    ? content.slice(0, 140)
+    : typeof data.lastMessage === "string"
+      ? data.lastMessage
+      : null;
+
+  await ref.update({
+    title: nextTitle,
+    updatedAt: now,
+    messageCount,
+    lastMessage,
+  });
+
+  const updated = await getConversation(id, user);
+  if (!updated) throw new Error("Conversation not found");
+  return updated;
 }
 
-export async function renameConversation(id: string, ownerEmail: string, title: string): Promise<ConversationSummary> {
-  const ownerId = ownerHash(ownerEmail);
+export async function renameConversation(
+  id: string,
+  user: AgentUser,
+  title: string,
+): Promise<ConversationSummary> {
+  const ownerId = ownerHash(user.email);
   const trimmed = title.trim().replace(/\s+/g, " ").slice(0, 80);
   if (!trimmed) throw new Error("Conversation title cannot be empty");
-  return withWriteLock(async () => {
-    const conversations = await readConversations();
-    const index = conversations.findIndex((item) => item.id === id && item.ownerId === ownerId);
-    if (index < 0) throw new Error("Conversation not found");
-    conversations[index] = { ...conversations[index], title: trimmed, updatedAt: new Date().toISOString() };
-    await writeConversations(conversations);
-    return toSummary(conversations[index]);
-  });
+
+  const ref = db.collection(COLLECTION).doc(id);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) throw new Error("Conversation not found");
+  const data = (snapshot.data() ?? {}) as Record<string, unknown>;
+  if (data.ownerHash !== ownerId) throw new Error("Conversation not found");
+
+  await ref.update({ title: trimmed, updatedAt: Timestamp.now() });
+  const updated = await ref.get();
+  return summaryFromDoc(updated);
 }
 
-export async function deleteConversation(id: string, ownerEmail: string): Promise<boolean> {
-  const ownerId = ownerHash(ownerEmail);
-  return withWriteLock(async () => {
-    const conversations = await readConversations();
-    const next = conversations.filter((item) => !(item.id === id && item.ownerId === ownerId));
-    if (next.length === conversations.length) return false;
-    await writeConversations(next);
-    return true;
-  });
-}
+export async function deleteConversation(id: string, user: AgentUser): Promise<boolean> {
+  const ownerId = ownerHash(user.email);
+  const ref = db.collection(COLLECTION).doc(id);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) return false;
+  const data = (snapshot.data() ?? {}) as Record<string, unknown>;
+  if (data.ownerHash !== ownerId) return false;
 
+  await db.recursiveDelete(ref);
+  return true;
+}
