@@ -7,9 +7,6 @@ export default function MessageCards({ cards }: { cards: ChatCard[] }) {
   return (
     <div className="mt-3 space-y-3">
       {cards.map((card, index) => {
-        if (card.type === "tasks" && !card.tasks.length) return null;
-        if (card.type === "employees" && !card.employees.length) return null;
-        if (card.type === "departments" && !card.departments.length) return null;
         switch (card.type) {
           case "tasks":
             return <TasksCard key={index} card={card} />;

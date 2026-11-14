@@ -12,6 +12,14 @@ export const SUGGESTIONS: Suggestion[] = [
   { id: "add-employee", label: "Add an employee", prompt: "I want to add an employee", roles: ["admin"] },
 ];
 
-export function suggestionsForRole(role: Role): Suggestion[] {
-  return SUGGESTIONS.filter((suggestion) => suggestion.roles.includes(role));
+import type { AgentUser } from "@/types/agent";
+
+export function suggestionsForUser(user: AgentUser): Suggestion[] {
+  return SUGGESTIONS.filter((suggestion) => {
+    if (!suggestion.roles.includes(user.role)) return false;
+    if (suggestion.id === "due-today") return user.role === "admin" || ["TASKS_VIEW_MY", "TASKS_VIEW_DEPARTMENT", "TASKS_VIEW_ALL"].some((key) => user.permissions[key]);
+    if (suggestion.id === "mark-done") return Boolean(user.permissions.TASKS_COMPLETE);
+    if (suggestion.id === "weekly") return Boolean(user.permissions.PERFORMANCE_VIEW_MY);
+    return true;
+  });
 }

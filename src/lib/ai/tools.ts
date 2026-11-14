@@ -38,6 +38,12 @@ interface ToolContext {
   allowEmployeeCreation?: boolean;
 }
 
+class ManagementDataError extends Error {
+  constructor(readonly resource: string, readonly status: number) {
+    super(`Unable to retrieve ${resource}`);
+  }
+}
+
 type ToolHandler = (args: Record<string, unknown>, context: ToolContext) => Promise<ToolExecutionResult>;
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -115,6 +121,42 @@ const performanceSchema = z.object({
   department: z.string().trim().min(1).optional(),
 }).strict();
 
+const employeeUpdateRequestSchema = z.object({
+  employee: z.string().trim().min(1),
+  fullName: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().email().max(254).optional(),
+  department: z.string().trim().min(1).optional(),
+  departmentId: z.string().trim().min(1).optional(),
+  designation: z.string().trim().max(120).nullable().optional(),
+  accountStatus: z.enum(["Active", "Inactive"]).optional(),
+  joiningDate: isoDate.nullable().optional(),
+}).strict();
+
+const departmentMutationSchema = z.object({
+  departmentName: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(1000).nullable().optional(),
+  manager: z.string().trim().max(120).nullable().optional(),
+  status: z.enum(["Active", "Inactive"]).optional(),
+}).strict();
+
+const departmentCreateSchema = departmentMutationSchema.extend({
+  departmentName: z.string().trim().min(1).max(120),
+});
+
+const employeePermissionsQuerySchema = z.object({
+  employee: z.string().trim().min(1).optional(),
+  permissionKey: z.string().trim().min(1).optional(),
+  search: z.string().trim().optional(),
+}).strict();
+
+const permissionChangeSchema = z.object({
+  employee: z.string().trim().min(1),
+  permissionKey: z.string().trim().min(1).optional(),
+  permissionKeys: z.array(z.string().trim().min(1)).min(1).optional(),
+  granted: z.boolean(),
+  revokeAll: z.boolean().optional(),
+}).strict().refine((value) => value.revokeAll === true || Boolean(value.permissionKey) !== Boolean(value.permissionKeys?.length), "Provide one permission key or a list of permission keys.");
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -125,6 +167,7 @@ function taskSummary(task: Record<string, unknown>, names?: { employees?: Map<st
   return {
     taskId: String(task.taskId ?? ""),
     title: String(task.title ?? ""),
+    description: task.description ? String(task.description) : null,
     assignedTo,
     assignedName: assignedTo ? names?.employees?.get(assignedTo) ?? null : null,
     departmentId,
@@ -141,14 +184,14 @@ function taskSummary(task: Record<string, unknown>, names?: { employees?: Map<st
 async function employeesForUser(user: AgentUser): Promise<EmployeeSummary[] | null> {
   if (!hasPermission(user, "EMPLOYEES_VIEW_DIRECTORY")) return null;
   const result = await managementJson<{ employees: EmployeeSummary[] }>("/api/employees");
-  if (!result.ok || !result.data) return null;
+  if (!result.ok || !result.data) throw new ManagementDataError("employee records", result.status);
   return result.data.employees ?? [];
 }
 
 async function departmentsForUser(user: AgentUser): Promise<DepartmentSummary[] | null> {
   if (!hasPermission(user, "DEPARTMENTS_VIEW")) return null;
   const result = await managementJson<{ departments: DepartmentSummary[] }>("/api/departments");
-  if (!result.ok || !result.data) return null;
+  if (!result.ok || !result.data) throw new ManagementDataError("department records", result.status);
   return result.data.departments ?? [];
 }
 
@@ -572,9 +615,11 @@ async function proposeUpdateTask(user: AgentUser, rawArgs: unknown): Promise<Too
     }
   }
 
+  const expected = Object.fromEntries(Object.keys(payload).filter((key) => key !== "taskId").map((key) => [key, (existing as unknown as Record<string, unknown>)[key] ?? null]));
+  payload.expected = expected;
   const summary = [{ label: "Task", value: `${existing.taskId}: ${existing.title}` }];
   for (const [key, value] of Object.entries(payload)) {
-    if (key !== "taskId") summary.push({ label: key, value: String(value) });
+    if (key !== "taskId" && key !== "expected") summary.push({ label: key, value: `${String(expected[key] ?? "Not set")} → ${String(value)}` });
   }
 
   const proposal = createProposal(user, "update_task", payload, summary);
@@ -842,7 +887,9 @@ async function createEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolEx
 }
 
 async function updateTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
-  const args = updateTaskSchema.parse(asRecord(rawArgs));
+  const raw = asRecord(rawArgs);
+  const expected = asRecord(raw.expected);
+  const args = updateTaskSchema.parse(raw);
   const existing = await findTask(user, args.taskId);
   if (!existing) return { ok: false, message: "Task not found or not visible to you." };
 
@@ -899,7 +946,7 @@ async function updateTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecut
   const updated = await managementJson<{ task: Record<string, unknown> }>(`/api/tasks/${encodeURIComponent(existing.taskId)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(Object.keys(expected).length ? { ...payload, expected } : payload),
   });
   if (!updated.ok || !updated.data) {
     const message = (updated.data as { error?: string } | null)?.error;
@@ -923,7 +970,215 @@ async function completeTask(user: AgentUser, rawArgs: unknown): Promise<ToolExec
   if (user.role !== "admin" && !hasPermission(user, "TASKS_COMPLETE")) {
     return { ok: false, permissionRequired: "TASKS_COMPLETE", message: "You do not have permission to complete tasks." };
   }
-  return updateTask(user, { taskId: args.taskId, status: "Completed" });
+  return proposeUpdateTask(user, { taskId: args.taskId, status: "Completed" });
+}
+
+async function proposeCreateDepartment(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can create departments.", statusCode: 403 };
+  const args = departmentCreateSchema.parse(asRecord(rawArgs));
+  const departments = await departmentsForUser(user);
+  if (!departments) return { ok: false, message: "I couldn't retrieve departments to check for duplicates. Please try again." };
+  if (departments.some((department) => department.departmentName.trim().toLowerCase() === args.departmentName.toLowerCase())) {
+    return { ok: false, message: `The department ${args.departmentName} already exists.` };
+  }
+  const proposal = createProposal(user, "create_department", args, [
+    { label: "Department", value: args.departmentName },
+    { label: "Description", value: args.description ?? "Not provided" },
+    { label: "Manager", value: args.manager ?? "Not provided" },
+  ]);
+  return { ok: true, message: "Review the department details and confirm to create it.", data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() } };
+}
+
+async function createDepartment(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can create departments.", statusCode: 403 };
+  const args = departmentCreateSchema.parse(asRecord(rawArgs));
+  const created = await managementJson<{ department: DepartmentSummary }>("/api/departments", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args),
+  });
+  if (!created.ok || !created.data?.department) {
+    const message = (created.data as { error?: string } | null)?.error ?? (created.status === 403 ? "You do not have permission to create departments." : "I couldn't create the department because the management system returned an error.");
+    return { ok: false, message, statusCode: created.status };
+  }
+  const department = created.data.department;
+  return { ok: true, message: `Created department ${department.departmentName} (${department.departmentId}).`, data: { department } };
+}
+
+async function proposeUpdateDepartment(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can update departments.", statusCode: 403 };
+  const raw = asRecord(rawArgs);
+  const target = typeof raw.department === "string" ? raw.department : typeof raw.departmentId === "string" ? raw.departmentId : "";
+  if (!target.trim()) return { ok: false, message: "Which department would you like to update?" };
+  const { department: _department, departmentId: _departmentId, ...fields } = raw;
+  const patch = departmentMutationSchema.parse(fields);
+  if (!Object.keys(patch).length) return { ok: false, message: "What should I change for that department?" };
+  const resolved = await resolveDepartment(user, target);
+  if (!resolved.department) return { ok: false, message: resolved.error ?? "I couldn't identify that department.", data: resolved.candidates };
+  const existing = resolved.department;
+  const expected = {
+    departmentName: existing.departmentName,
+    description: existing.description ?? null,
+    manager: existing.manager ?? null,
+    status: existing.status ?? null,
+  };
+  const summary = [{ label: "Department", value: `${existing.departmentName} (${existing.departmentId})` }];
+  for (const [key, value] of Object.entries(patch)) {
+    const before = expected[key as keyof typeof expected];
+    summary.push({ label: key, value: `${String(before ?? "Not set")} → ${String(value ?? "Not set")}` });
+  }
+  const proposal = createProposal(user, "update_department", { departmentId: existing.departmentId, expected, patch }, summary);
+  return { ok: true, message: "Review the department changes and confirm to apply them.", data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() } };
+}
+
+async function updateDepartment(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can update departments.", statusCode: 403 };
+  const args = asRecord(rawArgs);
+  const departmentId = String(args.departmentId ?? "");
+  const patch = departmentMutationSchema.parse(args.patch);
+  const expected = asRecord(args.expected);
+  const currentResult = await managementJson<{ departments: DepartmentSummary[] }>(`/api/departments?search=${encodeURIComponent(departmentId)}`);
+  if (!currentResult.ok || !currentResult.data) return { ok: false, message: "I couldn't verify the department before updating it. Please try again." };
+  const current = (currentResult.data.departments ?? []).find((item) => item.departmentId === departmentId);
+  if (!current) return { ok: false, message: "That department no longer exists. Please search again." };
+  const currentValues: Record<string, unknown> = { ...current };
+  if (Object.keys(patch).some((key) => String(currentValues[key] ?? "") !== String(expected[key] ?? ""))) {
+    return { ok: false, message: "The department changed after you reviewed this proposal. Please review the latest details and try again.", statusCode: 409 };
+  }
+  const updated = await managementJson<{ department: DepartmentSummary }>(`/api/departments/${encodeURIComponent(departmentId)}`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...patch, expected }),
+  });
+  if (!updated.ok || !updated.data?.department) {
+    return { ok: false, message: (updated.data as { error?: string } | null)?.error ?? "I couldn't update the department because the management system returned an error.", statusCode: updated.status };
+  }
+  const department = updated.data.department;
+  return { ok: true, message: `Updated department ${department.departmentName} (${department.departmentId}).`, data: { department } };
+}
+
+async function proposeUpdateEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can update employee records.", statusCode: 403 };
+  const args = employeeUpdateRequestSchema.parse(asRecord(rawArgs));
+  const { employee: target, department, departmentId, ...fields } = args;
+  const patch: Record<string, unknown> = { ...fields };
+  const departmentQuery = departmentId ?? department;
+  if (departmentQuery !== undefined) {
+    const resolved = await resolveDepartment(user, departmentQuery);
+    if (!resolved.department) return { ok: false, message: resolved.error ?? "I couldn't identify that department.", data: resolved.candidates };
+    patch.departmentId = resolved.department.departmentId;
+  }
+  if (!Object.keys(patch).length) return { ok: false, message: "Which employee details would you like to change?" };
+  const resolved = await resolveEmployee(user, target);
+  if (!resolved.employee) return { ok: false, message: resolved.error ?? "I couldn't identify that employee.", data: resolved.candidates };
+  const existing = resolved.employee;
+  const expected = Object.fromEntries(Object.keys(patch).map((key) => [key, (existing as unknown as Record<string, unknown>)[key] ?? null]));
+  const labels: Record<string, string> = { fullName: "Name", email: "Email", departmentId: "Department ID", designation: "Designation", accountStatus: "Account status", joiningDate: "Joining date" };
+  const summary = [{ label: "Employee", value: `${existing.fullName} (${existing.employeeId})` }];
+  for (const [key, value] of Object.entries(patch)) summary.push({ label: labels[key] ?? key, value: `${String(expected[key] ?? "Not set")} → ${String(value ?? "Not set")}` });
+  const proposal = createProposal(user, "update_employee", { employeeId: existing.employeeId, expected, patch }, summary);
+  return { ok: true, message: "Review the employee changes and confirm to apply them.", data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() } };
+}
+
+async function updateEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can update employee records.", statusCode: 403 };
+  const args = asRecord(rawArgs);
+  const employeeId = String(args.employeeId ?? "");
+  const patch = employeeUpdateRequestSchema.omit({ employee: true, department: true }).parse(args.patch);
+  const expected = asRecord(args.expected);
+  const currentResult = await managementJson<{ employee: EmployeeSummary }>(`/api/employees/${encodeURIComponent(employeeId)}`);
+  if (!currentResult.ok || !currentResult.data?.employee) return { ok: false, message: "I couldn't verify the employee before updating the record. Please try again.", statusCode: currentResult.status };
+  const current = currentResult.data.employee as EmployeeSummary & Record<string, unknown>;
+  if (Object.keys(patch).some((key) => String(current[key] ?? "") !== String(expected[key] ?? ""))) {
+    return { ok: false, message: "The employee record changed after you reviewed this proposal. Please review the latest details and try again.", statusCode: 409 };
+  }
+  const updated = await managementJson<{ employee: EmployeeSummary }>(`/api/employees/${encodeURIComponent(employeeId)}`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...patch, expected }),
+  });
+  if (!updated.ok || !updated.data?.employee) return { ok: false, message: (updated.data as { error?: string } | null)?.error ?? "I couldn't update the employee because the management system returned an error.", statusCode: updated.status };
+  const employee = updated.data.employee;
+  return { ok: true, message: `Updated employee ${employee.fullName} (${employee.employeeId}).`, data: { employee } };
+}
+
+async function getEmployeePermissions(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can view employee permissions.", statusCode: 403 };
+  const args = employeePermissionsQuerySchema.parse(asRecord(rawArgs));
+  if (args.employee) {
+    const resolved = await resolveEmployee(user, args.employee);
+    if (!resolved.employee) return { ok: false, message: resolved.error ?? "I couldn't identify that employee.", data: resolved.candidates };
+    const result = await managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(resolved.employee.employeeId)}`);
+    if (!result.ok || !result.data) return { ok: false, message: (result.data as { error?: string } | null)?.error ?? "I couldn't retrieve that employee's permissions.", statusCode: result.status };
+    const permissions = asRecord(result.data.permissions);
+    const selected = args.permissionKey ? { [args.permissionKey]: permissions[args.permissionKey] } : permissions;
+    if (args.permissionKey && !Object.prototype.hasOwnProperty.call(permissions, args.permissionKey)) {
+      return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys: Object.keys(permissions) } };
+    }
+    return { ok: true, message: `Retrieved permissions for ${resolved.employee.fullName}.`, data: { employee: result.data.employee, permissions: selected, availablePermissionKeys: Object.keys(permissions) } };
+  }
+  const listed = await managementJson<{ employees: Array<Record<string, unknown>> }>(`/api/admin/permissions/employees?includePermissions=true&search=${encodeURIComponent(args.search ?? "")}`);
+  if (!listed.ok || !listed.data) return { ok: false, message: (listed.data as { error?: string } | null)?.error ?? "I couldn't retrieve employee permissions.", statusCode: listed.status };
+  let employees = listed.data.employees ?? [];
+  const availablePermissionKeys = Object.keys(asRecord(employees[0]?.permissions));
+  if (args.permissionKey && availablePermissionKeys.length && !availablePermissionKeys.includes(args.permissionKey)) {
+    return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys } };
+  }
+  if (args.permissionKey) {
+    employees = employees.filter((employee) => asRecord(employee.permissions)[args.permissionKey!] === true);
+  }
+  return { ok: true, message: `Retrieved ${employees.length} employee permission record${employees.length === 1 ? "" : "s"}.`, data: { employees, availablePermissionKeys } };
+}
+
+async function proposePermissionChange(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can change employee permissions.", statusCode: 403 };
+  const args = permissionChangeSchema.parse(asRecord(rawArgs));
+  const resolved = await resolveEmployee(user, args.employee);
+  if (!resolved.employee) return { ok: false, message: resolved.error ?? "I couldn't identify that employee.", data: resolved.candidates };
+  const result = await managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(resolved.employee.employeeId)}`);
+  if (!result.ok || !result.data) return { ok: false, message: (result.data as { error?: string } | null)?.error ?? "I couldn't retrieve the current permissions.", statusCode: result.status };
+  const permissions = asRecord(result.data.permissions);
+  const requestedKeys = "revokeAll" in args && args.revokeAll === true
+    ? Object.keys(permissions).filter((key) => permissions[key] === true)
+    : args.permissionKeys ?? (args.permissionKey ? [args.permissionKey] : []);
+  if (!requestedKeys.length) return { ok: true, message: `${resolved.employee.fullName} has no permissions to remove.`, data: { employeeId: resolved.employee.employeeId, permissionKeys: [] } };
+  const invalidKeys = requestedKeys.filter((key) => !Object.prototype.hasOwnProperty.call(permissions, key));
+  if (invalidKeys.length) {
+    return { ok: false, message: "One or more permissions are not part of the current permission model. Ask me to show the employee's permissions to see valid keys.", data: { availablePermissionKeys: Object.keys(permissions) } };
+  }
+  const expectedPermissions = { ...permissions };
+  const changes = Object.fromEntries(requestedKeys.map((key) => [key, args.granted]));
+  const changedKeys = requestedKeys.filter((key) => (permissions[key] === true) !== args.granted);
+  if (!changedKeys.length) return { ok: true, message: `${resolved.employee.fullName} already has that permission state.`, data: { employeeId: resolved.employee.employeeId, permissionKeys: requestedKeys, granted: args.granted } };
+  const summary = [
+    { label: "Employee", value: `${resolved.employee.fullName} (${resolved.employee.employeeId})` },
+    ...changedKeys.map((key) => ({ label: "Permission", value: `${key}: ${(permissions[key] === true) ? "Granted" : "Not granted"} → ${args.granted ? "Granted" : "Removed"}` })),
+  ];
+  const proposal = createProposal(user, "update_employee_permissions", {
+    employeeId: resolved.employee.employeeId,
+    permissionChanges: changes,
+    expectedPermissions,
+  }, summary);
+  return { ok: true, message: "Review the permission change and confirm to apply it.", data: { proposalId: proposal.id, summary: proposal.summary, expiresAt: new Date(proposal.expiresAt).toISOString() } };
+}
+
+async function updateEmployeePermissions(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can change employee permissions.", statusCode: 403 };
+  const args = asRecord(rawArgs);
+  const employeeId = String(args.employeeId ?? "");
+  const permissionChanges = asRecord(args.permissionChanges);
+  const expectedPermissions = asRecord(args.expectedPermissions);
+  const current = await managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(employeeId)}`);
+  if (!current.ok || !current.data) return { ok: false, message: (current.data as { error?: string } | null)?.error ?? "I couldn't verify current permissions.", statusCode: current.status };
+  const permissions = asRecord(current.data.permissions);
+  if (Object.keys(permissions).some((key) => expectedPermissions[key] !== permissions[key])) {
+    return { ok: false, message: "The employee permissions changed after you reviewed this proposal. Retrieve the latest permissions and try again.", statusCode: 409 };
+  }
+  for (const [key, granted] of Object.entries(permissionChanges)) {
+    if (!Object.prototype.hasOwnProperty.call(permissions, key) || typeof granted !== "boolean") {
+      return { ok: false, message: "One or more permissions in this proposal are no longer available." };
+    }
+    permissions[key] = granted;
+  }
+  const saved = await managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(employeeId)}`, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ permissions, expectedPermissions }),
+  });
+  if (!saved.ok || !saved.data) return { ok: false, message: (saved.data as { error?: string } | null)?.error ?? "I couldn't save the permission change.", statusCode: saved.status };
+  return { ok: true, message: `Updated permissions for ${employeeId}.`, data: saved.data };
 }
 
 function tool(name: string, description: string, parameters: Record<string, unknown>) {
@@ -994,6 +1249,24 @@ export function buildToolDefinitions(user: AgentUser) {
     }, ["title"])));
   }
   if (user.role === "admin") {
+    tools.push(tool("propose_revoke_all_permissions", "Propose removing every currently granted employee permission. Show the complete revocation scope and wait for administrator confirmation.", objectSchema({ employee: { type: "string" } }, ["employee"])));
+    tools.push(tool("get_employee_permissions", "Retrieve actual employee permission grants from the Management System. Use this to list records, inspect valid permission keys or find employees with a specific key. Do not invent permission names.", objectSchema({
+      employee: { type: "string", description: "Employee name or ID. Omit to list permission summaries." },
+      permissionKey: { type: "string", description: "Exact key returned by the permission lookup." },
+      search: { type: "string" },
+    })));
+    tools.push(tool("propose_permission_change", "Propose granting or removing one or more exact permission keys returned by the Management System. Always request confirmation before applying the change.", objectSchema({
+      employee: { type: "string" }, permissionKey: { type: "string" }, permissionKeys: { type: "array", items: { type: "string" } }, granted: { type: "boolean" },
+    }, ["employee", "granted"])));
+    tools.push(tool("propose_create_department", "Propose a department creation. Ask for its name if missing; summarize the exact values and wait for administrator confirmation.", objectSchema({
+      departmentName: { type: "string" }, description: { type: "string" }, manager: { type: "string" },
+    }, ["departmentName"])));
+    tools.push(tool("propose_update_department", "Find a real department and propose changing its name, description, manager or status. Preserve all unspecified values and wait for administrator confirmation.", objectSchema({
+      department: { type: "string" }, departmentId: { type: "string" }, departmentName: { type: "string" }, description: { type: ["string", "null"] }, manager: { type: ["string", "null"] }, status: { type: "string", enum: ["Active", "Inactive"] },
+    })));
+    tools.push(tool("propose_update_employee", "Find a real employee and propose updating supported employee fields: name, email, department, designation, account status and joining date. Preserve unspecified values and wait for administrator confirmation.", objectSchema({
+      employee: { type: "string" }, fullName: { type: "string" }, email: { type: "string" }, department: { type: "string" }, departmentId: { type: "string" }, designation: { type: ["string", "null"] }, accountStatus: { type: "string", enum: ["Active", "Inactive"] }, joiningDate: { type: ["string", "null"], pattern: datePattern.source },
+    })));
     tools.push(tool("propose_create_employee", "Open the structured employee registration form whenever an administrator asks to add an employee, even if no details have been supplied yet. Populate only details the administrator already provided. The administrator must review and confirm the completed form before anything is created.", objectSchema({
       fullName: { type: "string", description: "Employee's full name (required)." },
       email: { type: "string", description: "Employee's work email address (required, must be unique)." },
@@ -1032,7 +1305,7 @@ export function buildToolDefinitions(user: AgentUser) {
     }, ["taskId"])));
   }
   if (hasPermission(user, "TASKS_COMPLETE")) {
-    tools.push(tool("complete_task", "Mark a visible task as completed when permitted.", objectSchema({ taskId: { type: "string" } }, ["taskId"])));
+    tools.push(tool("complete_task", "Propose marking a visible task as completed. The administrator or employee must confirm before the update is applied.", objectSchema({ taskId: { type: "string" } }, ["taskId"])));
   }
   return tools;
 }
@@ -1051,6 +1324,16 @@ const handlers: Record<string, ToolHandler> = {
   propose_assign_task: (args, { user }) => proposeAssignTask(user, args),
   propose_create_employee: (args, { user }) => proposeCreateEmployee(user, args),
   propose_update_task: (args, { user }) => proposeUpdateTask(user, args),
+  get_employee_permissions: (args, { user }) => getEmployeePermissions(user, args),
+  propose_permission_change: (args, { user }) => proposePermissionChange(user, args),
+  propose_revoke_all_permissions: (args, { user }) => proposePermissionChange(user, { ...asRecord(args), granted: false, revokeAll: true }),
+  propose_create_department: (args, { user }) => proposeCreateDepartment(user, args),
+  create_department: (args, { user }) => createDepartment(user, args),
+  propose_update_department: (args, { user }) => proposeUpdateDepartment(user, args),
+  update_department: (args, { user }) => updateDepartment(user, args),
+  propose_update_employee: (args, { user }) => proposeUpdateEmployee(user, args),
+  update_employee: (args, { user }) => updateEmployee(user, args),
+  update_employee_permissions: (args, { user }) => updateEmployeePermissions(user, args),
 };
 
 export async function executeTool(name: string, args: unknown, context: ToolContext): Promise<ToolExecutionResult> {
@@ -1064,6 +1347,12 @@ export async function executeTool(name: string, args: unknown, context: ToolCont
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { ok: false, message: error.issues[0]?.message || "Invalid tool arguments." };
+    }
+    if (error instanceof ManagementDataError) {
+      const message = error.status === 403
+        ? `You do not have permission to view ${error.resource}.`
+        : `The Management System could not retrieve ${error.resource}. Please try again.`;
+      return { ok: false, message, statusCode: error.status };
     }
     console.error(`Tool ${name} failed`, error);
     return { ok: false, message: "The operation failed. Please try again." };

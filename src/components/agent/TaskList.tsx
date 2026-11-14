@@ -20,7 +20,8 @@ const taskSchema = z.object({
 const outputSchema = z.object({
   tasks: z.array(taskSchema).optional(),
   total: z.number().optional(),
-  card: z.object({ tasks: z.array(taskSchema).optional() }).optional(),
+  emptyMessage: z.string().optional(),
+  card: z.object({ tasks: z.array(taskSchema).optional(), emptyMessage: z.string().optional() }).optional(),
 });
 
 export default function TaskList({ part }: { part: ToolResultPart }) {
@@ -29,7 +30,7 @@ export default function TaskList({ part }: { part: ToolResultPart }) {
   const [tasks, setTasks] = useState<TaskSummary[]>(initialTasks as TaskSummary[]);
   const [expanded, setExpanded] = useState(false);
 
-  if (!parsed.success || !tasks.length) return null;
+  if (!parsed.success) return null;
 
   const visible = expanded ? tasks : tasks.slice(0, 5);
 
@@ -58,6 +59,9 @@ export default function TaskList({ part }: { part: ToolResultPart }) {
         <h3 className="text-sm font-semibold text-[var(--ink)]">Tasks</h3>
         <span className="text-xs text-[var(--ink-muted)]">{tasks.length} tasks</span>
       </div>
+      {!tasks.length ? (
+        <p className="px-4 py-4 text-sm text-[var(--ink-muted)]">{parsed.data.emptyMessage ?? parsed.data.card?.emptyMessage ?? "No tasks match that request."}</p>
+      ) : (
       <ul className="divide-y divide-slate-100">
         {visible.map((task) => (
           <li key={task.taskId} className="flex items-center gap-3 px-4 py-3">
@@ -78,6 +82,7 @@ export default function TaskList({ part }: { part: ToolResultPart }) {
           </li>
         ))}
       </ul>
+      )}
       {tasks.length > 5 && !expanded && (
         <button type="button" onClick={() => setExpanded(true)} className="w-full border-t border-[var(--border)] px-4 py-2 text-xs font-medium text-[var(--brand)]">
           Show {tasks.length - 5} more

@@ -44,7 +44,15 @@ export function useSpeechRecognition(onFinalText: (text: string) => void) {
     recognition.onend = () => setListening(false);
     recognition.onerror = (event) => {
       setListening(false);
-      setError(event?.error === "not-allowed" || event?.error === "service-not-allowed" ? "Microphone access was denied. Please allow microphone permission and try again." : "Voice input is not available right now. Please try again or type your message.");
+      const messages: Record<string, string> = {
+        "not-allowed": "Microphone access was denied. Allow microphone access in your browser settings and try again.",
+        "service-not-allowed": "Speech recognition is unavailable for this browser or network. You can still type your message.",
+        "audio-capture": "No microphone is available. Check that one is connected and enabled.",
+        network: "Speech recognition could not connect. Check your internet connection and try again.",
+        "no-speech": "I didn't hear speech. Try again or type your message.",
+        aborted: "Voice input stopped. Try again when you're ready.",
+      };
+      setError(messages[event?.error ?? ""] ?? "Voice input is unavailable right now. Please try again or type your message.");
     };
     recognition.onresult = (event) => {
       const finalParts: string[] = [];

@@ -15,6 +15,7 @@ export type TaskStatus = "Pending" | "In Progress" | "Completed" | "Overdue";
 export interface TaskSummary {
   taskId: string;
   title: string;
+  description?: string | null;
   assignedTo: string | null;
   assignedName?: string | null;
   departmentId: string | null;

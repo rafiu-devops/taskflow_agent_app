@@ -13,7 +13,7 @@ import ConversationMenu from "@/components/history/ConversationMenu";
 import AppHeader from "@/components/layout/AppHeader";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { cn } from "@/lib/utils";
-import { suggestionsForRole } from "@/lib/agent/suggestions";
+import { suggestionsForUser } from "@/lib/agent/suggestions";
 import { unlockAudio, playSound } from "@/lib/sound";
 import { normalizeResponse } from "@/lib/agent/normalize";
 import CommandMenu, { type CommandMenuItem } from "./CommandMenu";
@@ -197,7 +197,7 @@ export default function ChatClient({ user, conversationId: initialConversationId
       .catch(() => undefined);
   }, [user.role]);
 
-  const suggestions = useMemo(() => suggestionsForRole(user.role), [user.role]);
+  const suggestions = useMemo(() => suggestionsForUser(user), [user]);
 
   function stopSending() {
     abortRef.current?.abort();

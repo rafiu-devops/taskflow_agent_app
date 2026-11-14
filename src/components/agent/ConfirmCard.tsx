@@ -16,6 +16,7 @@ export default function ConfirmCard({ part }: { part: ToolResultPart }) {
   const data = parsed.success ? parsed.data : {};
   const [state, setState] = useState<"pending" | "done" | "cancelled" | "expired">("pending");
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
 
   async function confirm() {
     if (!data.proposalId) return;
@@ -26,9 +27,11 @@ export default function ConfirmCard({ part }: { part: ToolResultPart }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ proposalId: data.proposalId, decision: "confirm" }),
       });
-      if (!response.ok) throw new Error("Failed");
+      const resultData: { ok?: boolean; result?: { message?: string }; error?: string } = await response.json().catch(() => ({}));
+      if (!response.ok || resultData.ok !== true) throw new Error(resultData.result?.message ?? resultData.error ?? "The change was not saved. Please review it and try again.");
       setState("done");
-    } catch {
+    } catch (reason) {
+      setFailure(reason instanceof Error ? reason.message : "The change was not saved.");
       setState("expired");
     } finally {
       setBusy(false);
@@ -59,7 +62,7 @@ export default function ConfirmCard({ part }: { part: ToolResultPart }) {
   if (state === "expired") {
     return (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        This proposal expired. <button type="button" className="ml-2 text-xs font-semibold underline">Ask again</button>
+        {failure ?? "This proposal expired."} Ask again after reviewing the latest record.
       </div>
     );
   }

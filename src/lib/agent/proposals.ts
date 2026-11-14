@@ -5,7 +5,7 @@ import type { AgentUser } from "@/types/agent";
 export interface PendingProposal {
   id: string;
   ownerEmail: string;
-  tool: "create_task" | "update_task";
+  tool: "create_task" | "update_task" | "create_department" | "update_department" | "update_employee" | "update_employee_permissions";
   args: Record<string, unknown>;
   summary: Array<{ label: string; value: string }>;
   expiresAt: number;
