@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowDown, Copy, Mic, Send } from "lucide-react";
+import { ArrowDown, Copy, Mic, MicOff, Send } from "lucide-react";
 import type { AgentUser, ChatMessage, Conversation } from "@/types/agent";
 import { renderToolResult } from "@/components/agent/tool-renderers";
 import MarkdownMessage from "@/components/chat/MarkdownMessage";
@@ -23,6 +23,8 @@ type ChatClientProps = {
   conversationId: string | null;
   initialPrompt?: string | null;
 };
+
+const SCROLL_BOTTOM_THRESHOLD = 120;
 
 type ConversationFetchResult = { conversation?: Conversation; error?: string };
 
@@ -92,7 +94,7 @@ export default function ChatClient({ user, conversationId: initialConversationId
   const isNearBottom = useCallback(() => {
     const el = messagesRef.current;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_BOTTOM_THRESHOLD;
   }, []);
 
   const scrollToBottom = useCallback(() => {
@@ -103,8 +105,9 @@ export default function ChatClient({ user, conversationId: initialConversationId
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
-    if (isNearBottom()) scrollToBottom();
-    else queueMicrotask(() => setShowScrollButton(true));
+    if (isNearBottom()) {
+      scrollToBottom();
+    }
   }, [messages.length, sending, isNearBottom, scrollToBottom]);
 
   useEffect(() => {
@@ -113,7 +116,7 @@ export default function ChatClient({ user, conversationId: initialConversationId
     const onScroll = () => {
       setShowScrollButton(!isNearBottom());
     };
-    el.addEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [isNearBottom]);
 
@@ -248,11 +251,11 @@ export default function ChatClient({ user, conversationId: initialConversationId
         <button
           type="button"
           onClick={speech.listening ? speech.stop : speech.start}
-          aria-label={speech.listening ? "Stop listening" : "Use microphone"}
+          aria-label={speech.listening ? "Stop voice input" : "Start voice input"}
           aria-pressed={speech.listening}
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--ink-muted)] transition hover:bg-[var(--border)]"
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition ${speech.listening ? "bg-rose-100 text-rose-600" : "text-[var(--ink-muted)] hover:bg-[var(--border)]"}`}
         >
-          <Mic className="h-5 w-5" aria-hidden="true" />
+          {speech.listening ? <MicOff className="h-5 w-5" aria-hidden="true" /> : <Mic className="h-5 w-5" aria-hidden="true" />}
         </button>
         <label className="sr-only" htmlFor="chat-input">Enter a prompt</label>
         <textarea
@@ -391,7 +394,7 @@ export default function ChatClient({ user, conversationId: initialConversationId
                               return <MarkdownMessage key={partIndex} content={part.text} />;
                             }
                             if (part.type === "tool-result") {
-                              return <div key={part.id}>{renderToolResult(part)}</div>;
+                              return <div key={part.id}>{renderToolResult(part, undefined, conversationId)}</div>;
                             }
                             return null;
                           })}

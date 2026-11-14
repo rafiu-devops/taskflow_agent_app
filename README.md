@@ -15,6 +15,7 @@ Browser → TaskFlow AI Agent PWA (this app)
 - Agent API routes forward the encrypted `taskflow_session` cookie to management APIs server-to-server.
 - Management APIs remain authoritative: identity, role, permissions and ownership are re-checked there on every request.
 - Admins use `ADMIN_EMAILS`; employees are matched to the `Employees` worksheet by email and must be `Active`.
+- Admin employee creation uses a management-backed registration form with department choices and a review step before the employee API is called.
 
 ## Screens
 

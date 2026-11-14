@@ -105,8 +105,8 @@ export default function AppShell({ user, children }: { user: AgentUser; children
   }
 
   const sidebar = (
-    <div className="flex h-full flex-col gap-4">
-      <Link href="/chat" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl p-2 hover:bg-[var(--bg)]">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 lg:gap-4">
+      <Link href="/chat" onClick={() => setOpen(false)} className="flex shrink-0 items-center gap-3 rounded-xl p-2 hover:bg-[var(--bg)]">
         <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--brand)] text-xs font-black text-white">TF</div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold tracking-tight text-[var(--ink)]">TaskFlow AI</p>
@@ -117,13 +117,13 @@ export default function AppShell({ user, children }: { user: AgentUser; children
       <Link
         href="/chat"
         onClick={() => setOpen(false)}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
+        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
       >
         <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
         New chat
       </Link>
 
-      <div className="relative">
+      <div className="relative shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-muted)]" aria-hidden="true" />
         <input
           value={search}
@@ -133,7 +133,7 @@ export default function AppShell({ user, children }: { user: AgentUser; children
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="space-y-4">
           {grouped.map((group) => (
             <section key={group.label}>
@@ -164,30 +164,31 @@ export default function AppShell({ user, children }: { user: AgentUser; children
           ))}
           {!grouped.length && <p className="px-2 text-xs text-[var(--ink-muted)]">No conversations yet.</p>}
         </div>
+        {installPrompt && (
+          <div className="mt-4 border-t border-[var(--border)] pt-3">
+            <button
+              type="button"
+              onClick={async () => {
+                await installPrompt.prompt();
+                await installPrompt.userChoice.catch(() => undefined);
+                setInstallPrompt(null);
+              }}
+              className="text-left text-xs font-medium text-[var(--brand)] hover:underline"
+            >
+              Install app
+            </button>
+          </div>
+        )}
       </div>
 
-      {installPrompt && (
-        <button
-          type="button"
-          onClick={async () => {
-            await installPrompt.prompt();
-            await installPrompt.userChoice.catch(() => undefined);
-            setInstallPrompt(null);
-          }}
-          className="text-left text-xs font-medium text-[var(--brand)] hover:underline"
-        >
-          Install app
-        </button>
-      )}
-
-      <div className="border-t border-[var(--border)] pt-3">
+      <div className="shrink-0 border-t border-[var(--border)] pt-3">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--border)] text-xs font-bold text-[var(--ink)]">{initials(user.name)}</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-[var(--ink)]">{user.name}</p>
-            <p className="truncate text-[11px] capitalize text-[var(--ink-muted)]">{user.role}</p>
+            <p className="truncate text-[11px] text-[var(--ink-muted)]">{user.email}</p>
           </div>
-          <Link href="/settings" className="grid h-9 w-9 place-items-center rounded-xl text-[var(--ink-muted)] hover:bg-[var(--border)]" aria-label="Settings">
+          <Link href="/settings" onClick={() => setOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--ink-muted)] hover:bg-[var(--border)]" aria-label="Settings">
             <Settings className="h-4 w-4" aria-hidden="true" />
           </Link>
           <button
@@ -207,15 +208,15 @@ export default function AppShell({ user, children }: { user: AgentUser; children
   return (
     <AppShellContext.Provider value={context}>
       <div className="min-h-screen bg-transparent text-foreground">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 backdrop-blur-xl lg:block">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden h-dvh w-72 flex-col border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:flex">
           {sidebar}
         </aside>
 
         {open && (
           <div className="fixed inset-0 z-40 lg:hidden" role="presentation">
             <button className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" aria-label="Close menu" onClick={() => setOpen(false)} />
-            <aside ref={drawerRef} className="absolute inset-y-0 left-0 w-[min(20rem,88vw)] border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 shadow-2xl">
-              <div className="mb-3 flex items-center justify-between">
+            <aside ref={drawerRef} className="absolute inset-y-0 left-0 flex h-dvh w-[min(20rem,88vw)] flex-col border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+              <div className="mb-2 flex shrink-0 items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-muted)]">Menu</p>
                 <button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="rounded-xl p-2 text-[var(--ink-muted)] hover:bg-[var(--border)]">
                   <X className="h-5 w-5" aria-hidden="true" />

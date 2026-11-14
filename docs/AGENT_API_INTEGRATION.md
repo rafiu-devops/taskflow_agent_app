@@ -39,6 +39,7 @@ Common error envelope: `{ "error": "message" }` with appropriate status code.
 - Success response: `{ "ok": true, "role": "admin" | "employee" }`; sets HTTP-only `taskflow_session` cookie.
 - Errors: `401 {"error":"Not authorised"}`; `503`; `500`.
 - Agent use: `POST /api/auth/signin` proxy; agent forwards `Set-Cookie` to the browser.
+- The current Management authentication contract is email-only; it does not document email verification or invitations. Employee registration through the form does not add either capability.
 
 ## POST `/api/auth/logout`
 
@@ -124,6 +125,37 @@ Common error envelope: `{ "error": "message" }` with appropriate status code.
 - Success response: `{ "employees": [ ... ] }`; admins receive full rows; employees receive fields gated by directory/details/contact permissions.
 - Agent use: Admin employee search/assignment resolution; employee directory tool (permission-gated).
 
+## POST `/api/employees`
+
+- Purpose: create a new employee account (admin-only) and persist it to the `Employees` worksheet of the TaskFlow workbook.
+- Required authentication: valid session.
+- Required role: `admin` (server-side admin verification; employee sessions are rejected with `403`).
+- Request schema (validated by management with `createEmployeeSchema`):
+  ```json
+  {
+    "fullName": "string (required)",
+    "email": "string (required, valid work email, unique)",
+    "employeeId": "EMP-000 (optional, unique, generated when omitted)",
+    "departmentId": "DEP-000 (optional)",
+    "designation": "string (optional)",
+    "accountStatus": "Active | Inactive (optional, default Active)",
+    "joiningDate": "YYYY-MM-DD (optional, default today)"
+  }
+  ```
+- Success response: `201 { "employee": { ... } }`.
+- Errors: `400` validation; `401` unauthenticated; `403` not admin; `404` workbook/sheet missing; `409` duplicate employee email or employee ID; `500`.
+- Agent use: The Admin-only registration form uses the actual department directory, submits the selected `departmentId`, defaults status to `Active`, checks for duplicates, and lets the backend generate `employeeId` when omitted. The form presents a review step before it calls this endpoint.
+- The documented Management API has no contact-number field. The agent does not collect or submit one.
+
+## POST `/api/agent/employee`
+
+- Purpose: execute the admin employee-creation flow from the structured employee form (admin-only).
+- Required authentication: valid session.
+- Required role: `admin`.
+- Body: `{ "conversationId": "string", "employee": { "fullName": "...", "email": "...", "employeeId": "...", "departmentId": "...", "designation": "...", "accountStatus": "Active", "joiningDate": "YYYY-MM-DD" } }`.
+- Behavior: re-checks Admin authorization, validates and duplicate-checks the values, calls the secured Management API, and persists the result to the owning conversation. It returns success only after the Management API confirms creation.
+- Errors: `400` invalid input; `401` unauthenticated; `403` non-admin; `404` conversation not found; `409` duplicate; other Management API errors preserve their status.
+
 ## GET `/api/departments`
 
 - Purpose: list departments.
@@ -138,7 +170,8 @@ Common error envelope: `{ "error": "message" }` with appropriate status code.
 - Required authentication: valid session.
 - Required permission: one of `PERFORMANCE_VIEW_MY`, `PERFORMANCE_VIEW_DEPARTMENT`, `PERFORMANCE_VIEW_ALL`.
 - Success response: `{ "performance": [ ... ], "scope": "own | department | all" }`.
-- Agent use: personal/team performance summaries (never fabricated).
+- Agent use: employees need `PERFORMANCE_VIEW_MY`; the agent additionally filters returned rows by the employee ID from the authenticated session. Admins may filter returned rows by employee or department, subject to the existing Management API permissions.
+- The documented endpoint does not accept a date range. The agent does not present its results as monthly or historical performance unless the returned data itself is time-scoped.
 
 ## GET `/api/dashboard`
 
@@ -172,7 +205,7 @@ Proxy to management logout; clears session.
 Proxy/normalization for agent UI (role, employeeId, permissions).
 
 ### GET/POST `/api/conversations`
-List/create authenticated user's conversations (file-backed, owner-hash scoped).
+List/create authenticated user's conversations in Firestore (owner-hash scoped).
 
 ### GET/PATCH/DELETE `/api/conversations/[id]`
 Load, rename or delete a conversation owned by the caller.

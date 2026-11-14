@@ -9,6 +9,7 @@ export const SUGGESTIONS: Suggestion[] = [
   { id: "assign", label: "Assign a task", prompt: "Assign a task", roles: ["admin"] },
   { id: "overdue", label: "Who's overdue?", prompt: "Which employees have overdue tasks?", roles: ["admin"] },
   { id: "team-perf", label: "Team performance", prompt: "Show team performance this week", roles: ["admin"] },
+  { id: "add-employee", label: "Add an employee", prompt: "I want to add an employee", roles: ["admin"] },
 ];
 
 export function suggestionsForRole(role: Role): Suggestion[] {

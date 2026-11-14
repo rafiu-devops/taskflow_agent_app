@@ -6,6 +6,8 @@ const TOOL_LABELS: Record<string, string> = {
   list_tasks: "Checking your tasks…",
   get_report: "Loading your report…",
   propose_assign_task: "Preparing assignment…",
+  propose_create_employee: "Preparing employee registration form…",
+  create_employee: "Employee record created.",
 };
 
 export default function ProgressTrace({ part }: { part: ToolResultPart }) {
@@ -15,7 +17,7 @@ export default function ProgressTrace({ part }: { part: ToolResultPart }) {
   return (
     <details className="text-xs text-[var(--ink-muted)]">
       <summary className="cursor-pointer">What I did ›</summary>
-      <p className="mt-1">{part.tool}</p>
+      <p className="mt-1">{TOOL_LABELS[part.tool] ?? "Completed a requested action."}</p>
     </details>
   );
 }

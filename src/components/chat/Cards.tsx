@@ -76,6 +76,11 @@ function TasksCard({ card }: { card: Extract<ChatCard, { type: "tasks" }> }) {
 }
 
 function PerformanceCard({ card }: { card: Extract<ChatCard, { type: "performance" }> }) {
+  const rows = card.rows ?? [];
+  const hasAssigned = rows.some((row) => row.assigned !== undefined);
+  const hasCompleted = rows.some((row) => row.completed !== undefined);
+  const hasOverdue = rows.some((row) => row.overdue !== undefined);
+  const hasCompletionRate = rows.some((row) => row.completionRate !== undefined);
   return (
     <Shell icon={BarChart3} title={card.title} subtitle={card.subtitle}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -87,13 +92,25 @@ function PerformanceCard({ card }: { card: Extract<ChatCard, { type: "performanc
           </div>
         ))}
       </div>
-      {card.rows && card.rows.length > 0 && (
+      {rows.length > 0 && (
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-xs">
-            <thead className="text-[var(--ink-muted)]"><tr><th className="py-2 pr-3">Employee</th><th className="py-2 pr-3">Assigned</th><th className="py-2 pr-3">Completed</th><th className="py-2 pr-3">Overdue</th><th className="py-2">Rate</th></tr></thead>
+            <thead className="text-[var(--ink-muted)]"><tr>
+              <th className="py-2 pr-3">Employee</th>
+              {hasAssigned && <th className="py-2 pr-3">Assigned</th>}
+              {hasCompleted && <th className="py-2 pr-3">Completed</th>}
+              {hasOverdue && <th className="py-2 pr-3">Overdue</th>}
+              {hasCompletionRate && <th className="py-2">Rate</th>}
+            </tr></thead>
             <tbody className="divide-y divide-line/70 text-[var(--ink)]">
-              {card.rows.map((row) => (
-                <tr key={row.name}><td className="py-2 pr-3 font-medium">{row.name}</td><td className="py-2 pr-3">{row.assigned}</td><td className="py-2 pr-3">{row.completed}</td><td className="py-2 pr-3">{row.overdue}</td><td className="py-2">{row.completionRate}%</td></tr>
+              {rows.map((row) => (
+                <tr key={row.name}>
+                  <td className="py-2 pr-3 font-medium">{row.name}</td>
+                  {hasAssigned && <td className="py-2 pr-3">{row.assigned ?? "—"}</td>}
+                  {hasCompleted && <td className="py-2 pr-3">{row.completed ?? "—"}</td>}
+                  {hasOverdue && <td className="py-2 pr-3">{row.overdue ?? "—"}</td>}
+                  {hasCompletionRate && <td className="py-2">{row.completionRate === undefined ? "—" : `${row.completionRate}%`}</td>}
+                </tr>
               ))}
             </tbody>
           </table>

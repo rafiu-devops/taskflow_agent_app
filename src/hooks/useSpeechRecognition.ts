@@ -8,7 +8,7 @@ type SpeechRecognitionLike = {
   lang: string;
   onstart: ((event: Event) => void) | null;
   onend: ((event: Event) => void) | null;
-  onerror: ((event: Event) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
   onresult: ((event: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null;
   start: () => void;
   stop: () => void;
@@ -19,6 +19,8 @@ export function useSpeechRecognition(onFinalText: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const finalTranscriptRef = useRef<string>("");
+  const lastEmittedRef = useRef<string>("");
 
   useEffect(() => {
     const SpeechRecognitionCtor =
@@ -31,24 +33,33 @@ export function useSpeechRecognition(onFinalText: (text: string) => void) {
 
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.onstart = () => {
       setListening(true);
       setError(null);
+      finalTranscriptRef.current = "";
+      lastEmittedRef.current = "";
     };
     recognition.onend = () => setListening(false);
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       setListening(false);
-      setError("Microphone access was denied or unavailable.");
+      setError(event?.error === "not-allowed" || event?.error === "service-not-allowed" ? "Microphone access was denied. Please allow microphone permission and try again." : "Voice input is not available right now. Please try again or type your message.");
     };
     recognition.onresult = (event) => {
-      let transcript = "";
+      const finalParts: string[] = [];
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
+        const result = event.results[i];
+        if (result?.isFinal) finalParts.push(result[0]?.transcript ?? "");
       }
-      const cleaned = transcript.trim();
-      if (cleaned) onFinalText(cleaned);
+      const finalText = finalParts.join(" ").trim();
+      if (finalText) {
+        const key = finalText.toLowerCase();
+        if (key !== lastEmittedRef.current) {
+          lastEmittedRef.current = key;
+          onFinalText(finalText);
+        }
+      }
     };
     recognitionRef.current = recognition;
     return () => {
@@ -77,4 +88,3 @@ export function useSpeechRecognition(onFinalText: (text: string) => void) {
 
   return { listening, error, start, stop };
 }
-

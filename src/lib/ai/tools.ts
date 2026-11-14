@@ -15,6 +15,7 @@ import type {
   ChatCard,
   ChatConfirmationCard,
   ChatDepartmentsCard,
+  ChatEmployeeFormCard,
   ChatEmployeesCard,
   ChatPerformanceCard,
   ChatTaskCard,
@@ -29,10 +30,12 @@ export interface ToolExecutionResult {
   data?: unknown;
   card?: ChatCard;
   permissionRequired?: string;
+  statusCode?: number;
 }
 
 interface ToolContext {
   user: AgentUser;
+  allowEmployeeCreation?: boolean;
 }
 
 type ToolHandler = (args: Record<string, unknown>, context: ToolContext) => Promise<ToolExecutionResult>;
@@ -74,6 +77,16 @@ const createTaskSchema = z.object({
   remarks: z.string().max(2000).optional(),
 });
 
+const createEmployeeSchema = z.object({
+  fullName: z.string().trim().min(1, "Employee full name is required").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid work email").max(254),
+  employeeId: z.string().trim().min(3).max(20).optional(),
+  departmentId: z.string().trim().min(1).max(20).optional(),
+  designation: z.string().trim().max(120).optional(),
+  accountStatus: z.enum(["Active", "Inactive"]).optional(),
+  joiningDate: z.string().regex(datePattern, "Use YYYY-MM-DD").optional(),
+});
+
 const updateTaskSchema = z.object({
   taskId: z.string().min(1),
   title: z.string().min(1).max(200).optional(),
@@ -96,6 +109,11 @@ const completeTaskSchema = z.object({
 const activityLogsSchema = z.object({
   limit: z.number().int().min(1).max(25).optional(),
 });
+
+const performanceSchema = z.object({
+  employee: z.string().trim().min(1).optional(),
+  department: z.string().trim().min(1).optional(),
+}).strict();
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -309,60 +327,141 @@ async function getDashboard(user: AgentUser): Promise<ToolExecutionResult> {
   const summary = (data as { summary?: Record<string, unknown> | null }).summary ?? null;
   const kpis = (data as { kpis?: Record<string, unknown> }).kpis ?? null;
   if (user.role === "admin" && kpis) {
-    const metrics = [
-      { label: "Total tasks", value: String(kpis.totalTasks ?? 0) },
-      { label: "Completed", value: String(kpis.completedTasks ?? 0) },
-      { label: "Pending", value: String(kpis.pendingTasks ?? 0) },
-      { label: "In progress", value: String(kpis.inProgressTasks ?? 0) },
-      { label: "Overdue", value: String(kpis.overdueTasks ?? 0) },
-      { label: "Completion rate", value: `${kpis.overallCompletionRate ?? 0}%` },
-      { label: "On-time rate", value: `${kpis.onTimeCompletionRate ?? 0}%` },
-    ];
-    const card: ChatPerformanceCard = { type: "performance", title: "Organization performance", metrics };
-    return { ok: true, message: "Loaded organization dashboard metrics.", data, card };
+    const metrics: ChatPerformanceCard["metrics"] = [];
+    for (const [key, label] of [
+      ["totalTasks", "Total tasks"],
+      ["completedTasks", "Completed"],
+      ["pendingTasks", "Pending"],
+      ["inProgressTasks", "In progress"],
+      ["overdueTasks", "Overdue"],
+    ] as const) {
+      const value = numericField(kpis, key);
+      if (value !== undefined) metrics.push({ label, value: String(value) });
+    }
+    for (const [key, label] of [
+      ["overallCompletionRate", "Completion rate"],
+      ["onTimeCompletionRate", "On-time rate"],
+    ] as const) {
+      const value = numericField(kpis, key);
+      if (value !== undefined) metrics.push({ label, value: `${value}%` });
+    }
+    if (metrics.length) {
+      const card: ChatPerformanceCard = { type: "performance", title: "Organization performance", metrics };
+      return { ok: true, message: "Loaded organization dashboard metrics.", data, card };
+    }
   }
   if (summary) {
-    const metrics = [
-      { label: "Total tasks", value: String(summary.totalTasks ?? 0) },
-      { label: "Completed", value: String(summary.completedTasks ?? 0) },
-      { label: "Pending", value: String(summary.pendingTasks ?? 0) },
-      { label: "Overdue", value: String(summary.overdueTasks ?? 0) },
-    ];
-    const card: ChatPerformanceCard = { type: "performance", title: "My dashboard", metrics };
-    return { ok: true, message: "Loaded your dashboard summary.", data, card };
+    const metrics: ChatPerformanceCard["metrics"] = [];
+    for (const [key, label] of [
+      ["totalTasks", "Total tasks"],
+      ["completedTasks", "Completed"],
+      ["pendingTasks", "Pending"],
+      ["overdueTasks", "Overdue"],
+    ] as const) {
+      const value = numericField(summary, key);
+      if (value !== undefined) metrics.push({ label, value: String(value) });
+    }
+    if (metrics.length) {
+      const card: ChatPerformanceCard = { type: "performance", title: "My dashboard", metrics };
+      return { ok: true, message: "Loaded your dashboard summary.", data, card };
+    }
   }
-  return { ok: true, message: "Dashboard is available but task statistics are not granted for this account.", data, card: { type: "notice", tone: "info", message: "Task statistics are not granted for your account." } };
+  return { ok: true, message: "Dashboard task statistics are not available for this account.", data, card: { type: "notice", tone: "info", message: "Dashboard task statistics are not available for this account." } };
 }
 
-async function getPerformance(user: AgentUser): Promise<ToolExecutionResult> {
-  if (!hasAnyPermissionUser(user, ["PERFORMANCE_VIEW_MY", "PERFORMANCE_VIEW_DEPARTMENT", "PERFORMANCE_VIEW_ALL"])) {
-    return { ok: false, permissionRequired: "PERFORMANCE_VIEW_MY | PERFORMANCE_VIEW_DEPARTMENT | PERFORMANCE_VIEW_ALL", message: "You do not have permission to view performance data." };
+function numericField(row: Record<string, unknown>, key: string): number | undefined {
+  const value = row[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+async function getPerformance(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  const args = performanceSchema.parse(user.role === "admin" ? asRecord(rawArgs) : {});
+  if (user.role !== "admin" && !hasPermission(user, "PERFORMANCE_VIEW_MY")) {
+    return { ok: false, permissionRequired: "PERFORMANCE_VIEW_MY", message: "You do not have permission to view your performance data." };
   }
   const result = await managementJson<{ performance: Array<Record<string, unknown>>; scope?: string }>("/api/performance");
   if (!result.ok || !result.data) {
     return { ok: false, message: result.status === 403 ? "You do not have permission to view performance data." : "Unable to load performance data." };
   }
-  const rows = result.data.performance ?? [];
-  const assigned = rows.reduce((sum, row) => sum + Number(row.totalAssignedTasks ?? 0), 0);
-  const completed = rows.reduce((sum, row) => sum + Number(row.completedTasks ?? 0), 0);
-  const overdue = rows.reduce((sum, row) => sum + Number(row.overdueTasks ?? 0), 0);
-  const completionRate = assigned ? Math.round((completed / assigned) * 1000) / 10 : 0;
-  const metrics = [
-    { label: "Assigned tasks", value: String(assigned) },
-    { label: "Completed", value: String(completed) },
-    { label: "Overdue", value: String(overdue) },
-    { label: "Completion rate", value: `${completionRate}%` },
-  ];
+  let rows = result.data.performance ?? [];
+
+  if (user.role !== "admin") {
+    if (!user.employeeId) {
+      return { ok: false, message: "Your employee profile is not linked to an employee record." };
+    }
+    rows = rows.filter((row) => String(row.employeeId ?? "").trim().toLowerCase() === user.employeeId?.toLowerCase());
+  } else if (args.employee) {
+    const resolved = await resolveEmployee(user, args.employee);
+    if (!resolved.employee) {
+      return {
+        ok: false,
+        message: resolved.error ?? "That employee name is ambiguous. Please specify an employee ID.",
+        data: resolved.candidates,
+      };
+    }
+    rows = rows.filter((row) => String(row.employeeId ?? "").trim().toLowerCase() === resolved.employee?.employeeId.toLowerCase());
+  }
+
+  if (user.role === "admin" && args.department) {
+    const resolved = await resolveDepartment(user, args.department);
+    if (!resolved.department) {
+      return {
+        ok: false,
+        message: resolved.error ?? "That department is ambiguous. Please specify a department ID.",
+        data: resolved.candidates,
+      };
+    }
+    const employees = await employeesForUser(user);
+    if (!employees) return { ok: false, message: "Unable to load employees to filter department performance." };
+    const employeeIds = new Set(
+      employees
+        .filter((employee) => employee.departmentId?.toLowerCase() === resolved.department?.departmentId.toLowerCase())
+        .map((employee) => employee.employeeId.toLowerCase()),
+    );
+    rows = rows.filter((row) => employeeIds.has(String(row.employeeId ?? "").trim().toLowerCase()));
+  }
+
+  if (!rows.length) {
+    const message = user.role !== "admin"
+      ? "Your performance records are not available yet. Once your assigned tasks have been tracked in the system, your performance information will become available."
+      : "No performance records were found for that request.";
+    return { ok: true, message, card: { type: "notice", tone: "info", message } };
+  }
+
+  const metrics: ChatPerformanceCard["metrics"] = [];
+  for (const [key, label] of [
+    ["totalAssignedTasks", "Assigned tasks"],
+    ["completedTasks", "Completed"],
+    ["overdueTasks", "Overdue"],
+  ] as const) {
+    const values = rows.map((row) => numericField(row, key)).filter((value): value is number => value !== undefined);
+    if (values.length === rows.length) metrics.push({ label, value: String(values.reduce((sum, value) => sum + value, 0)) });
+  }
+  if (rows.length === 1) {
+    const completionRate = numericField(rows[0], "completionRate");
+    if (completionRate !== undefined) metrics.push({ label: "Completion rate", value: `${completionRate}%` });
+  }
+  rows.sort((a, b) => (numericField(b, "completedTasks") ?? -1) - (numericField(a, "completedTasks") ?? -1));
   const card: ChatPerformanceCard = {
     type: "performance",
-    title: result.data.scope === "own" ? "My performance" : result.data.scope === "department" ? "Department performance" : "Performance report",
+    title: user.role !== "admin"
+      ? "My performance"
+      : args.employee
+        ? "Employee performance"
+        : args.department
+          ? "Department performance"
+          : result.data.scope === "department"
+            ? "Department performance"
+            : "Performance report",
     metrics,
     rows: rows.slice(0, 10).map((row) => ({
       name: String(row.employeeName ?? row.employeeId ?? "Unknown"),
-      assigned: Number(row.totalAssignedTasks ?? 0),
-      completed: Number(row.completedTasks ?? 0),
-      overdue: Number(row.overdueTasks ?? 0),
-      completionRate: Number(row.completionRate ?? 0),
+      assigned: numericField(row, "totalAssignedTasks"),
+      completed: numericField(row, "completedTasks"),
+      overdue: numericField(row, "overdueTasks"),
+      completionRate: numericField(row, "completionRate"),
     })),
   };
   return { ok: true, message: `Loaded ${rows.length} performance row${rows.length === 1 ? "" : "s"}.`, data: result.data, card };
@@ -553,6 +652,195 @@ async function createTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecut
   return { ok: true, message: `Created task ${task.taskId}.`, data: { task }, card };
 }
 
+const employeeEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function employeeCreateArgs(raw: Record<string, unknown>) {
+  const fullName = typeof raw.fullName === "string" ? raw.fullName.trim() : "";
+  const email = typeof raw.email === "string" ? raw.email.trim().toLowerCase() : "";
+  const employeeId = typeof raw.employeeId === "string" && raw.employeeId.trim() ? raw.employeeId.trim().toUpperCase() : null;
+  const departmentId = typeof raw.departmentId === "string" && raw.departmentId.trim() ? raw.departmentId.trim().toUpperCase() : null;
+  const department = typeof raw.department === "string" && raw.department.trim() ? raw.department.trim() : null;
+  const designation = typeof raw.designation === "string" && raw.designation.trim() ? raw.designation.trim() : null;
+  const accountStatus = typeof raw.accountStatus === "string" && raw.accountStatus.trim() ? raw.accountStatus.trim() : null;
+  const joiningDate = typeof raw.joiningDate === "string" && raw.joiningDate.trim() ? raw.joiningDate.trim() : null;
+  return { fullName, email, employeeId, departmentId, department, designation, accountStatus, joiningDate };
+}
+
+async function resolveEmployeeCreateDepartment(
+  user: AgentUser,
+  department: string | null,
+  departmentId: string | null = null,
+): Promise<{ departmentId: string | null; error?: string; candidates?: DepartmentSummary[] }> {
+  if (!department && !departmentId) return { departmentId: null };
+  const departments = await departmentsForUser(user);
+  if (!departments) return { departmentId: null, error: "Unable to validate the selected department." };
+  const byId = departmentId
+    ? departments.find((item) => item.departmentId.toLowerCase() === departmentId.toLowerCase())
+    : undefined;
+  if (departmentId && !byId) return { departmentId: null, error: "The selected department ID is not valid." };
+  let byName: DepartmentSummary | undefined;
+  if (department) {
+    const named = await resolveDepartment(user, department);
+    if (!named.department) {
+      return { departmentId: null, error: named.error ?? "Department not found or ambiguous.", candidates: named.candidates };
+    }
+    byName = named.department;
+  }
+  if (byId && byName && byName.departmentId !== byId.departmentId) {
+    return { departmentId: null, error: "The selected department and department ID do not match." };
+  }
+  return { departmentId: byId?.departmentId ?? byName?.departmentId ?? null };
+}
+
+async function proposeCreateEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") {
+    return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can create employees." };
+  }
+  const args = employeeCreateArgs(asRecord(rawArgs));
+  const message = args.fullName
+    ? `Yes, I can help you add ${args.fullName}. Please review and complete the employee details using the form below.`
+    : "Yes, I can help you add a new employee. Please provide the employee's details using the form below.";
+  return employeeFormResponse(args, message);
+}
+
+async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>, message: string): Promise<ToolExecutionResult> {
+  const result = await managementJson<{ departments: DepartmentSummary[] }>("/api/departments");
+  if (!result.ok || !result.data) {
+    const statusCode = result.status >= 400 ? result.status : 503;
+    return {
+      ok: false,
+      permissionRequired: result.status === 403 ? "DEPARTMENTS_VIEW" : undefined,
+      message: result.status === 403 ? "You do not have permission to view departments." : "Unable to load departments. No employee was created.",
+      statusCode,
+    };
+  }
+  const departments = result.data.departments ?? [];
+  const selectedDepartment = departments.find((department) =>
+    department.departmentId.toLowerCase() === (args.departmentId ?? args.department ?? "").toLowerCase()
+      || department.departmentName.toLowerCase() === (args.department ?? "").toLowerCase(),
+  );
+  const card: ChatEmployeeFormCard = {
+    type: "employee_form",
+    title: "Add a new employee",
+    message: `${message} The management system assigns an employee ID when the field is left blank.`,
+    fields: [
+      { key: "fullName", label: "Full name", type: "text", required: true, defaultValue: args.fullName ?? "", placeholder: "e.g. Ali Raza" },
+      { key: "email", label: "Work email", type: "email", required: true, defaultValue: args.email ?? "", placeholder: "e.g. ali.raza@taskflow.com" },
+      { key: "employeeId", label: "Employee ID", type: "text", required: false, defaultValue: args.employeeId ?? "", placeholder: "Leave blank for automatic assignment" },
+      {
+        key: "departmentId",
+        label: "Department",
+        type: "select",
+        required: false,
+        defaultValue: selectedDepartment?.departmentId ?? "",
+        options: departments.map((department) => ({ label: department.departmentName, value: department.departmentId })),
+        help: departments.length
+          ? "The department ID is populated from the selected department."
+          : "No departments are currently available; department is optional.",
+      },
+      { key: "designation", label: "Designation", type: "text", required: false, defaultValue: args.designation ?? "", placeholder: "e.g. Software Engineer" },
+      { key: "accountStatus", label: "Employment status", type: "select", required: false, defaultValue: args.accountStatus === "Inactive" ? "Inactive" : "Active", options: [{ label: "Active", value: "Active" }, { label: "Inactive", value: "Inactive" }] },
+      { key: "joiningDate", label: "Joining date", type: "date", required: false, defaultValue: args.joiningDate ?? "", placeholder: "YYYY-MM-DD" },
+    ],
+  };
+  return { ok: true, message, data: { card }, card };
+}
+
+async function createEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
+  if (user.role !== "admin") {
+    return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can create employees.", statusCode: 403 };
+  }
+  const args = employeeCreateArgs(asRecord(rawArgs));
+  if (!args.fullName) {
+    return { ok: false, message: "I can help you add a new employee. What is the employee's full name?", statusCode: 400 };
+  }
+  if (!args.email) {
+    return { ok: false, message: `I can help you add ${args.fullName}. What is the employee's work email address?`, statusCode: 400 };
+  }
+  if (!employeeEmailPattern.test(args.email)) {
+    return { ok: false, message: "That does not look like a valid work email address. What email should I use?", statusCode: 400 };
+  }
+
+  const payload = createEmployeeSchema.parse({
+    fullName: args.fullName,
+    email: args.email,
+    employeeId: args.employeeId ?? undefined,
+    departmentId: args.departmentId ?? undefined,
+    designation: args.designation ?? undefined,
+    accountStatus: args.accountStatus ?? undefined,
+    joiningDate: args.joiningDate ?? undefined,
+  });
+
+  const department = await resolveEmployeeCreateDepartment(user, args.department, args.departmentId);
+  if (department.error) return { ok: false, message: department.error, data: department.candidates, statusCode: 400 };
+  if (department.departmentId) payload.departmentId = department.departmentId;
+
+  const employees = await employeesForUser(user);
+  if (employees) {
+    const duplicateEmail = employees.find((employee) => employee.email?.toLowerCase() === String(payload.email ?? "").toLowerCase());
+    if (duplicateEmail) {
+      return { ok: false, message: `An employee with the email ${String(payload.email)} already exists (${duplicateEmail.fullName}). I did not create a duplicate record.`, statusCode: 409 };
+    }
+    if (payload.employeeId && employees.some((employee) => employee.employeeId.toLowerCase() === String(payload.employeeId).toLowerCase())) {
+      return { ok: false, message: `An employee with the ID ${String(payload.employeeId)} already exists. I did not create a duplicate record.`, statusCode: 409 };
+    }
+  }
+
+  const created = await managementJson<{ employee: Record<string, unknown> }>("/api/employees", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const createdEmployee = created.ok ? (created.data?.employee as Record<string, unknown> | null) : null;
+  if (!created.ok || !createdEmployee) {
+    const errorMessage = (created.data as { error?: string } | null)?.error;
+    const message = created.status === 403
+      ? "You do not have permission to create employees."
+      : errorMessage ?? (created.status === 409 ? "An employee with these details already exists." : "Unable to create the employee. Please try again.");
+    const statusCode = created.status >= 400 ? created.status : 502;
+    return { ok: false, message, data: created.data ?? undefined, statusCode };
+  }
+  if (typeof createdEmployee.employeeId !== "string" || !createdEmployee.employeeId.trim()) {
+    return {
+      ok: false,
+      message: "The management system did not return the new employee ID. Verify the record before retrying.",
+      statusCode: 502,
+    };
+  }
+
+  const employeeSummary: EmployeeSummary = {
+    employeeId: createdEmployee.employeeId,
+    fullName: String(createdEmployee.fullName ?? payload.fullName ?? ""),
+    email: typeof createdEmployee.email === "string" ? createdEmployee.email : String(payload.email ?? ""),
+    departmentId: typeof createdEmployee.departmentId === "string" ? createdEmployee.departmentId : null,
+    departmentName: typeof createdEmployee.departmentName === "string" ? createdEmployee.departmentName : null,
+    designation: typeof createdEmployee.designation === "string" ? createdEmployee.designation : null,
+    accountStatus: typeof createdEmployee.accountStatus === "string" ? createdEmployee.accountStatus : "Active",
+  };
+  const details = [
+    `- Employee ID: ${employeeSummary.employeeId}`,
+    `- Name: ${employeeSummary.fullName}`,
+    ...(employeeSummary.departmentName
+      ? [`- Department: ${employeeSummary.departmentName}`]
+      : employeeSummary.departmentId
+        ? [`- Department ID: ${employeeSummary.departmentId}`]
+        : []),
+    ...(employeeSummary.designation ? [`- Designation: ${employeeSummary.designation}`] : []),
+    `- Email: ${employeeSummary.email}`,
+    ...(employeeSummary.accountStatus ? [`- Status: ${employeeSummary.accountStatus}`] : []),
+  ];
+  const message = `Employee successfully added.\n\n${details.join("\n")}\n\nThe employee record is now available in the Management System.`;
+  const card: ChatConfirmationCard = {
+    type: "confirmation",
+    title: "Employee created",
+    message,
+    operation: "create_employee",
+    employee: employeeSummary,
+    timestamp: new Date().toISOString(),
+  };
+  return { ok: true, message, data: { employee: employeeSummary }, card };
+}
+
 async function updateTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
   const args = updateTaskSchema.parse(asRecord(rawArgs));
   const existing = await findTask(user, args.taskId);
@@ -679,8 +967,15 @@ export function buildToolDefinitions(user: AgentUser) {
   if (hasPermission(user, "DASHBOARD_VIEW_PERSONAL")) {
     tools.push(tool("get_dashboard", "Get the live dashboard summary (admin organization metrics or employee scoped summary).", objectSchema({})));
   }
-  if (hasAnyPermissionUser(user, ["PERFORMANCE_VIEW_MY", "PERFORMANCE_VIEW_DEPARTMENT", "PERFORMANCE_VIEW_ALL"])) {
-    tools.push(tool("get_performance", "Get performance metrics/rows visible to the user.", objectSchema({})));
+  if (user.role === "admin" || hasPermission(user, "PERFORMANCE_VIEW_MY")) {
+    tools.push(tool(
+      "get_performance",
+      "Get live performance data. Employees can only view their own rows. Admins may optionally filter by employee or department; the available endpoint does not provide period-specific results.",
+      objectSchema(user.role === "admin" ? {
+        employee: { type: "string", description: "Filter to one employee by name, email or ID." },
+        department: { type: "string", description: "Filter to one department by name or ID." },
+      } : {}),
+    ));
   }
   if (hasAnyPermissionUser(user, ["ACTIVITY_LOGS_VIEW", "ACTIVITY_LOGS_VIEW_MY"])) {
     tools.push(tool("get_activity_logs", "Get recent activity/audit logs when permitted.", objectSchema({ limit: { type: "number", minimum: 1, maximum: 25 } })));
@@ -697,6 +992,18 @@ export function buildToolDefinitions(user: AgentUser) {
       dueDate: { type: "string", pattern: datePattern.source, description: "YYYY-MM-DD" },
       remarks: { type: "string" },
     }, ["title"])));
+  }
+  if (user.role === "admin") {
+    tools.push(tool("propose_create_employee", "Open the structured employee registration form whenever an administrator asks to add an employee, even if no details have been supplied yet. Populate only details the administrator already provided. The administrator must review and confirm the completed form before anything is created.", objectSchema({
+      fullName: { type: "string", description: "Employee's full name (required)." },
+      email: { type: "string", description: "Employee's work email address (required, must be unique)." },
+      employeeId: { type: "string", description: "Employee ID to assign (optional; generated when omitted)." },
+      department: { type: "string", description: "Department name or ID (optional)." },
+      departmentId: { type: "string" },
+      designation: { type: "string" },
+      accountStatus: { type: "string", enum: ["Active", "Inactive"] },
+      joiningDate: { type: "string", pattern: datePattern.source, description: "YYYY-MM-DD" },
+    })));
   }
   if (
     hasAnyPermissionUser(user, [
@@ -735,16 +1042,21 @@ const handlers: Record<string, ToolHandler> = {
   search_employees: (args, { user }) => searchEmployees(user, args),
   list_departments: (args, { user }) => listDepartments(user, args),
   get_dashboard: (_args, { user }) => getDashboard(user),
-  get_performance: (_args, { user }) => getPerformance(user),
+  get_performance: (args, { user }) => getPerformance(user, args),
   get_activity_logs: (args, { user }) => getActivityLogs(user, args),
   create_task: (args, { user }) => createTask(user, args),
   update_task: (args, { user }) => updateTask(user, args),
   complete_task: (args, { user }) => completeTask(user, args),
+  create_employee: (args, { user }) => createEmployee(user, args),
   propose_assign_task: (args, { user }) => proposeAssignTask(user, args),
+  propose_create_employee: (args, { user }) => proposeCreateEmployee(user, args),
   propose_update_task: (args, { user }) => proposeUpdateTask(user, args),
 };
 
 export async function executeTool(name: string, args: unknown, context: ToolContext): Promise<ToolExecutionResult> {
+  if (name === "create_employee" && !context.allowEmployeeCreation) {
+    return { ok: false, permissionRequired: "EMPLOYEE_FORM_CONFIRMATION", message: "Employee creation requires administrator review and confirmation." };
+  }
   const handler = handlers[name];
   if (!handler) return { ok: false, message: `Tool ${name} is not available.` };
   try {

@@ -78,12 +78,13 @@ Summary:
 - Admin dashboard endpoint returns live KPI/chart data, recent tasks, overdue tasks and employee performance.
 - Performance endpoint returns scoped performance rows.
 - Directory endpoints return basic/detail/contact fields depending on permissions.
+- Employee creation: `POST /api/employees` (admin-only) writes a new row to the `Employees` worksheet via the Excel service; duplicates (email/ID) return `409`.
 - No salary/attendance/payroll/shift endpoints exist and the agent must not invent them.
 
 ## Missing APIs required by the AI agent
 
 - No separate agent token service is required for same-site/local deployment: the agent backend proxies browser requests and forwards the existing encrypted `taskflow_session` cookie to management APIs server-to-server.
-- No conversation/history API exists; the agent app implements its own file-backed conversation store (`data/conversations.json`) scoped by a one-way hash of the management user email.
+- No Management conversation/history API exists; the agent app stores conversations in the Firestore `taskflow_chats` collection, scoped by a one-way hash of the management user email.
 - No public service-account/delegated-user flow exists; the agent never bypasses management APIs and never reads Google Drive directly.
 - No streaming endpoint exists; agent responses are JSON.
 

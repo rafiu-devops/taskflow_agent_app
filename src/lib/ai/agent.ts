@@ -54,6 +54,15 @@ function historyFor(messages: ChatMessage[]): OpenAiMessage[] {
   }));
 }
 
+function stripInternalMentions(text: string, tokens: string[]): string {
+  let next = text;
+  for (const token of tokens) {
+    const pattern = new RegExp(token.replace(/[-_]/g, "\\$&"), "gi");
+    next = next.replace(pattern, " ");
+  }
+  return next.replace(/\s{2,}/g, " ").replace(/\s+([,.!?])/g, "$1").trim();
+}
+
 async function callProvider(apiKey: string, baseUrl: string, model: string, messages: OpenAiMessage[], tools: ReturnType<typeof buildToolDefinitions>): Promise<OpenAiMessage> {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -98,21 +107,25 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
 
   const parts: MessagePart[] = [];
   let lastAssistant: OpenAiMessage | null = null;
+  const internalTokens = tools.flatMap((definition) => [definition.function.name]);
 
   for (let iteration = 0; iteration < 4; iteration += 1) {
     const assistant = await callProvider(config.apiKey, config.baseUrl, config.model, history, tools);
     lastAssistant = assistant;
 
-    if (assistant.content?.trim()) {
-      parts.push({ type: "text", text: assistant.content.trim() });
-    }
-
     if (!assistant.tool_calls?.length) {
+      const text = assistant.content?.trim() ?? "";
+      if (text) {
+        parts.push({ type: "text", text: stripInternalMentions(text, internalTokens) });
+      }
       if (!parts.length) {
         parts.push({ type: "text", text: "I’m not sure how to respond to that yet." });
       }
       return { parts };
     }
+
+    // Assistant prose that arrives together with tool calls is internal reasoning context;
+    // it must not be surfaced to the user as the reply.
 
     history.push({
       role: "assistant",

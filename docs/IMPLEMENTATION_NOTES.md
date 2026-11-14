@@ -13,8 +13,8 @@
 - Next.js 16 App Router + TypeScript + Tailwind v4 application inside `taskflow_agent_app`.
 - Screens: `/login`, `/home`, `/chat`, `/chat/[id]`, `/history`, `/settings`, `/offline`.
 - PWA: manifest, icons, service worker (static assets only), offline fallback page, install prompt hook.
-- Agent API routes: auth signin/logout proxy, `/api/me` proxy, conversation CRUD, `/api/agent/chat`.
-- File-backed conversation store scoped by SHA-256 hash of management user email.
+- Agent API routes: auth signin/logout proxy, `/api/me` proxy, conversation CRUD, `/api/agent/chat`, and the Admin-only employee form submission route.
+- Firestore conversation store scoped by SHA-256 hash of management user email.
 - OpenAI-compatible tool-calling agent with server-side tools; permission-filtered per user.
 - Role-aware Home UI, chat cards (tasks/performance/confirmation/employees/departments/notice), history grouping (Today/Yesterday/Previous) with rename/delete.
 
@@ -33,11 +33,13 @@ None. All required functionality existed; conversations live in the agent app be
 Admin (all admin tools granted by management admin permission set):
 - `list_tasks`, `search_employees`, `list_departments`, `get_dashboard`, `get_performance`, `get_activity_logs`
 - `create_task`, `update_task`, `complete_task`
+- `propose_create_employee` / `create_employee` (admin-only employee creation through the management API; form review and explicit confirmation required)
 
 Employee (filtered by their actual grants):
 - Task listing/scoping per `TASKS_VIEW_*`
 - Create/update/complete per `TASKS_CREATE`, `TASKS_EDIT`, `TASKS_ASSIGN`, `TASKS_CHANGE_*`, `TASKS_UPDATE_PROGRESS`, `TASKS_COMPLETE`, `TASKS_ADD_REMARKS`
-- Directory/department/performance/activity tools per corresponding permissions
+- Own performance per `PERFORMANCE_VIEW_MY`, filtered again by the authenticated employee ID
+- Directory/department/activity tools per corresponding permissions
 
 Management remains authoritative; tool visibility is only a first filter.
 
@@ -68,6 +70,8 @@ See `.env.example`. No secrets are committed.
 
 ## Known limitations
 
-- Conversation store is local disk (single instance). Use a database for multi-instance deployments.
-- Email-only auth inherited from management app; add SSO there before exposing to the public internet.
+- The Management API contract does not include a contact-number field, so the agent does not collect or store one.
+- The documented performance endpoint has no date-range filtering; monthly/history reporting is unavailable unless the Management API returns time-scoped records.
+- Management sign-in is currently email-only and has no documented email-verification or invitation flow. The agent cannot add verification without a corresponding Management authentication API.
+- Firebase Admin is used for Firestore conversations; authentication itself is delegated to the Management app's `taskflow_session` workflow. No Firebase Auth sign-in flow is present in this repository.
 - AI quality depends on configured provider/model; tool calling requires a tool-capable model.

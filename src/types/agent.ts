@@ -59,7 +59,7 @@ export interface ChatPerformanceCard {
   title: string;
   subtitle?: string;
   metrics: Array<{ label: string; value: string; note?: string }>;
-  rows?: Array<{ name: string; assigned: number; completed: number; overdue: number; completionRate: number }>;
+  rows?: Array<{ name: string; assigned?: number; completed?: number; overdue?: number; completionRate?: number }>;
 }
 
 export interface ChatConfirmationCard {
@@ -68,6 +68,7 @@ export interface ChatConfirmationCard {
   message: string;
   operation: string;
   task?: TaskSummary;
+  employee?: EmployeeSummary;
   timestamp: string;
 }
 
@@ -86,6 +87,24 @@ export interface ChatDepartmentsCard {
   emptyMessage?: string;
 }
 
+export interface ChatEmployeeFormField {
+  key: string;
+  label: string;
+  type: "text" | "email" | "date" | "select";
+  required: boolean;
+  options?: Array<{ label: string; value: string }>;
+  defaultValue?: string;
+  placeholder?: string;
+  help?: string;
+}
+
+export interface ChatEmployeeFormCard {
+  type: "employee_form";
+  title: string;
+  message: string;
+  fields: ChatEmployeeFormField[];
+}
+
 export interface ChatNoticeCard {
   type: "notice";
   tone: "info" | "warning" | "error" | "success";
@@ -99,6 +118,7 @@ export type ChatCard =
   | ChatConfirmationCard
   | ChatEmployeesCard
   | ChatDepartmentsCard
+  | ChatEmployeeFormCard
   | ChatNoticeCard;
 
 export type TextPart = { type: "text"; text: string };
