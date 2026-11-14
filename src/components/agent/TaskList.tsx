@@ -12,6 +12,8 @@ const taskSchema = z.object({
   assignedName: z.string().nullable().optional(),
   assignedTo: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  assignedDate: z.string().nullable().optional(),
+  completionDate: z.string().nullable().optional(),
   priority: z.string().nullable().optional(),
   status: z.string().nullable().optional(),
   progressPercentage: z.number().nullable().optional(),
@@ -69,13 +71,14 @@ export default function TaskList({ part }: { part: ToolResultPart }) {
               type="button"
               onClick={() => toggle(task.taskId)}
               aria-label={`Mark ${task.title} done`}
+              disabled={task.status === "Completed"}
               className="grid h-11 w-11 shrink-0 place-items-center sm:h-6 sm:w-6"
             >
               <span className="grid h-6 w-6 place-items-center rounded-md border border-slate-300 text-xs text-transparent transition hover:border-[var(--brand)]" />
             </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-[var(--ink)]">{task.title}</p>
-              <p className="text-[11px] text-[var(--ink-muted)]">{task.dueDate ? `Due ${task.dueDate}` : "No due date"}</p>
+              <p className="text-[11px] text-[var(--ink-muted)]">{task.status === "Completed" && task.completionDate ? `Completed ${task.completionDate}` : task.dueDate ? `Due ${task.dueDate}` : task.assignedDate ? `Assigned ${task.assignedDate}` : "No due date"}</p>
             </div>
             <span className="text-[11px] text-[var(--ink-muted)]">{task.priority ?? ""}</span>
             <span className="text-[11px] text-[var(--ink-muted)]">{task.status ?? ""}</span>

@@ -8,7 +8,7 @@ import {
   isTaskOverdue,
   normalizeTaskStatus,
   sortRecent,
-  todayUtcDateOnly,
+  isTaskCompleted,
 } from "@/lib/tasks";
 import type {
   AgentUser,
@@ -58,6 +58,8 @@ const listTasksSchema = z.object({
   assignee: z.string().optional(),
   assignedTo: z.string().optional(),
   due: z.enum(["today", "overdue"]).optional(),
+  assignedToday: z.boolean().optional(),
+  completedToday: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
@@ -175,7 +177,10 @@ function taskSummary(task: Record<string, unknown>, names?: { employees?: Map<st
     priority: (task.priority as TaskSummary["priority"]) ?? null,
     status: (task.status as TaskSummary["status"]) ?? null,
     dueDate: task.dueDate ? String(task.dueDate) : null,
+    assignedDate: task.assignedDate ? String(task.assignedDate) : null,
     completionDate: task.completionDate ? String(task.completionDate) : null,
+    createdAt: task.createdAt ? String(task.createdAt) : null,
+    updatedAt: task.updatedAt ? String(task.updatedAt) : null,
     progressPercentage: typeof task.progressPercentage === "number" ? task.progressPercentage : Number(task.progressPercentage ?? 0) || 0,
     remarks: task.remarks ? String(task.remarks) : null,
   };
@@ -254,19 +259,46 @@ async function findTask(user: AgentUser, taskId: string): Promise<TaskSummary | 
   return match ? taskSummary(match, names) : null;
 }
 
+function taskFlowTodayDateOnly(now = new Date()): string {
+  const timeZone = process.env.TASKFLOW_TIME_ZONE?.trim() || process.env.TZ?.trim() || "UTC";
+  try {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+    return `${value("year")}-${value("month")}-${value("day")}`;
+  } catch {
+    return new Intl.DateTimeFormat("en", {
+      timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(now).reduce((date, part) => {
+      if (part.type === "year") date.year = part.value;
+      if (part.type === "month") date.month = part.value;
+      if (part.type === "day") date.day = part.value;
+      return date;
+    }, { year: "0000", month: "00", day: "00" }).year + "-" +
+      new Intl.DateTimeFormat("en", { timeZone: "UTC", month: "2-digit" }).format(now) + "-" +
+      new Intl.DateTimeFormat("en", { timeZone: "UTC", day: "2-digit" }).format(now);
+  }
+}
+
 async function listTasks(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
   const args = listTasksSchema.parse(asRecord(rawArgs));
-  const [employees, departments, result] = await Promise.all([
-    employeesForUser(user),
-    departmentsForUser(user),
-    managementJson<{ tasks: Record<string, unknown>[]; scope?: string }>("/api/tasks"),
-  ]);
+  const result = await managementJson<{ tasks: Record<string, unknown>[]; scope?: string }>("/api/tasks");
   if (!result.ok || !result.data) {
-    return { ok: false, permissionRequired: "TASKS_VIEW_MY | TASKS_VIEW_DEPARTMENT | TASKS_VIEW_ALL", message: result.status === 403 ? "You do not have permission to view tasks." : "Unable to load tasks." };
+    const message = result.status === 403
+      ? "You do not have permission to view tasks."
+      : "I couldn't retrieve your tasks right now. Please try again.";
+    return { ok: false, permissionRequired: result.status === 403 ? "TASKS_VIEW_MY | TASKS_VIEW_DEPARTMENT | TASKS_VIEW_ALL" : undefined, message, statusCode: result.status };
   }
+  const namesResults = await Promise.allSettled([employeesForUser(user), departmentsForUser(user)]);
+  const employees = namesResults[0].status === "fulfilled" ? namesResults[0].value : null;
+  const departments = namesResults[1].status === "fulfilled" ? namesResults[1].value : null;
   const names = { employees: employeeNameMap(employees), departments: departmentNameMap(departments) };
   let tasks = (result.data.tasks ?? []).map((task) => taskSummary(task, names));
-  const today = todayUtcDateOnly();
+  const today = taskFlowTodayDateOnly();
 
   const departmentQuery = args.departmentId ?? args.department;
   if (departmentQuery) {
@@ -282,6 +314,22 @@ async function listTasks(user: AgentUser, rawArgs: unknown): Promise<ToolExecuti
     tasks = tasks.filter((task) => task.assignedTo === resolved.employee!.employeeId);
   }
 
+  const taskCounts = {
+    totalAssignedTasks: tasks.length,
+    pendingTasks: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && !isTaskOverdue(task, today)).length,
+    inProgressTasks: tasks.filter((task) => normalizeTaskStatus(task.status) === "In Progress" && !isTaskOverdue(task, today)).length,
+    completedTasks: tasks.filter(isTaskCompleted).length,
+    overdueTasks: tasks.filter((task) => isTaskOverdue(task, today)).length,
+    tasksDueToday: tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today).length,
+    openTasksDueToday: tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today && !isTaskCompleted(task)).length,
+    pendingTasksUpcoming: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && String(task.dueDate ?? "").slice(0, 10) > today).length,
+    pendingTasksUnscheduled: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && !String(task.dueDate ?? "").slice(0, 10)).length,
+    assignedToday: tasks.filter((task) => String(task.assignedDate ?? "").slice(0, 10) === today).length,
+    completedToday: tasks.filter((task) => isTaskCompleted(task) && String(task.completionDate ?? "").slice(0, 10) === today).length,
+  };
+
+  if (args.assignedToday) tasks = tasks.filter((task) => String(task.assignedDate ?? "").slice(0, 10) === today);
+  if (args.completedToday) tasks = tasks.filter((task) => isTaskCompleted(task) && String(task.completionDate ?? "").slice(0, 10) === today);
   if (args.search) {
     const query = args.search.toLowerCase();
     tasks = tasks.filter((task) =>
@@ -308,7 +356,7 @@ async function listTasks(user: AgentUser, rawArgs: unknown): Promise<ToolExecuti
     total: tasks.length,
     emptyMessage: "No tasks match those filters.",
   };
-  return { ok: true, message: `Found ${tasks.length} task${tasks.length === 1 ? "" : "s"}.`, data: { total: tasks.length, tasks: limited }, card };
+  return { ok: true, message: `Found ${tasks.length} task${tasks.length === 1 ? "" : "s"}.`, data: { total: tasks.length, tasks: limited, summary: taskCounts }, card };
 }
 
 async function searchEmployees(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
@@ -1204,6 +1252,8 @@ export function buildToolDefinitions(user: AgentUser) {
       assignee: { type: "string", description: "Employee name, email or ID." },
       assignedTo: { type: "string" },
       due: { type: "string", enum: ["today", "overdue"] },
+      assignedToday: { type: "boolean" },
+      completedToday: { type: "boolean" },
       limit: { type: "number", minimum: 1, maximum: 50 },
     })));
   }

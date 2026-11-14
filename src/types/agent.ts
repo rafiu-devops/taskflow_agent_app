@@ -23,7 +23,10 @@ export interface TaskSummary {
   priority: TaskPriority | string | null;
   status: TaskStatus | string | null;
   dueDate: string | null;
+  assignedDate?: string | null;
   completionDate?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   progressPercentage: number | null;
   remarks?: string | null;
 }

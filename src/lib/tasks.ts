@@ -20,6 +20,7 @@ export function isTaskCompleted(task: { status: unknown }): boolean {
 
 export function isTaskOverdue(task: { status: unknown; dueDate?: string | null }, today = todayUtcDateOnly()): boolean {
   if (isTaskCompleted(task)) return false;
+  if (normalizeTaskStatus(task.status) === "Overdue") return true;
   const due = String(task.dueDate ?? "").slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(due) && due < today;
 }
