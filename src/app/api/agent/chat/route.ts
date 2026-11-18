@@ -4,6 +4,7 @@ import { appendMessage, createConversation, getConversation } from "@/lib/conver
 import { chatRequestSchema } from "@/lib/validation";
 import { isAiConfigured } from "@/lib/ai/config";
 import { AgentProviderError, runAgent } from "@/lib/ai/agent";
+import { updateMemory } from "@/lib/memory/store";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 20;
@@ -70,10 +71,20 @@ export async function POST(request: Request) {
 
   try {
     const result = await runAgent(user, conversation.messages);
+    const assistantText = result.parts
+      .filter((part) => part.type === "text")
+      .map((part) => (part as { text: string }).text)
+      .join("\n")
+      .trim();
     conversation = await appendMessage(conversation.id, user, {
       role: "assistant",
       parts: result.parts,
     });
+    try {
+      await updateMemory(user, parsed.data.message, assistantText);
+    } catch (memoryError) {
+      console.error("Memory update failed", memoryError);
+    }
     return NextResponse.json({
       conversationId: conversation.id,
       message: conversation.messages[conversation.messages.length - 1],

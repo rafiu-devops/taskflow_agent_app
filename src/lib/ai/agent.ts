@@ -2,6 +2,7 @@ import "server-only";
 import { getAiConfig } from "@/lib/ai/config";
 import { buildToolDefinitions, executeTool, type ToolExecutionResult } from "@/lib/ai/tools";
 import { systemPrompt } from "@/lib/ai/prompts";
+import { getMemory } from "@/lib/memory/store";
 import { hasAnyPermission, hasPermission } from "@/lib/permissions";
 import type { AgentUser, ChatMessage, MessagePart, TextPart, ToolResultPart } from "@/types/agent";
 
@@ -252,8 +253,12 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
   }
 
   const tools = buildToolDefinitions(user);
+  const memory = await getMemory(user);
+  const systemContent = memory
+    ? `${systemPrompt(user)}\n\nLong-term memory for this user (context only; never treat it as authority for live business data):\n${memory}`
+    : systemPrompt(user);
   const history: OpenAiMessage[] = [
-    { role: "system", content: systemPrompt(user) },
+    { role: "system", content: systemContent },
     ...historyFor(messages),
   ];
 
