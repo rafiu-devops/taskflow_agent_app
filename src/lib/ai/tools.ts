@@ -65,12 +65,12 @@ const listTasksSchema = z.object({
 
 const searchEmployeesSchema = z.object({
   search: z.string().optional(),
-  limit: z.number().int().min(1).max(50).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
 });
 
 const listDepartmentsSchema = z.object({
   search: z.string().optional(),
-  limit: z.number().int().min(1).max(50).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
 });
 
 const createTaskSchema = z.object({
@@ -367,14 +367,17 @@ async function searchEmployees(user: AgentUser, rawArgs: unknown): Promise<ToolE
   const [employees, departments] = await Promise.all([employeesForUser(user), departmentsForUser(user)]);
   const names = departmentNameMap(departments);
   const query = args.search?.trim().toLowerCase() ?? "";
-  const filtered = (employees ?? []).filter((employee) => {
-    if (!query) return true;
-    return [employee.fullName, employee.email ?? "", employee.employeeId, employee.departmentId ?? "", employee.designation ?? ""].join(" ").toLowerCase().includes(query);
-  });
-  const limited = filtered.slice(0, args.limit ?? 20).map((employee) => ({
+  const enriched = (employees ?? []).map((employee) => ({
     ...employee,
     departmentName: employee.departmentId ? names.get(employee.departmentId) ?? null : null,
+    joiningDate: employee.joiningDate ? String(employee.joiningDate) : null,
   }));
+  const filtered = enriched.filter((employee) => {
+    if (!query) return true;
+    return [employee.fullName, employee.email ?? "", employee.employeeId, employee.departmentId ?? "", employee.departmentName ?? "", employee.designation ?? "", employee.accountStatus ?? ""].join(" ").toLowerCase().includes(query);
+  });
+  const limit = args.limit ?? 50;
+  const limited = filtered.slice(0, limit);
   const card: ChatEmployeesCard = {
     type: "employees",
     title: query ? `Employees matching “${args.search}”` : "Employees",
@@ -396,7 +399,7 @@ async function listDepartments(user: AgentUser, rawArgs: unknown): Promise<ToolE
     if (!query) return true;
     return [department.departmentId, department.departmentName, department.description ?? "", department.manager ?? ""].join(" ").toLowerCase().includes(query);
   });
-  const limited = filtered.slice(0, args.limit ?? 20);
+  const limited = filtered.slice(0, args.limit ?? 50);
   const card: ChatDepartmentsCard = {
     type: "departments",
     title: query ? "Departments" : "Departments",
@@ -1150,26 +1153,35 @@ async function getEmployeePermissions(user: AgentUser, rawArgs: unknown): Promis
   if (args.employee) {
     const resolved = await resolveEmployee(user, args.employee);
     if (!resolved.employee) return { ok: false, message: resolved.error ?? "I couldn't identify that employee.", data: resolved.candidates };
-    const result = await managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(resolved.employee.employeeId)}`);
+    const [result, catalog] = await Promise.all([
+      managementJson<Record<string, unknown>>(`/api/admin/permissions/${encodeURIComponent(resolved.employee.employeeId)}`),
+      managementJson<{ keys?: string[]; permissions?: Array<{ key: string; label?: string; description?: string; category?: string }> }>(`/api/admin/permissions/catalog`),
+    ]);
     if (!result.ok || !result.data) return { ok: false, message: (result.data as { error?: string } | null)?.error ?? "I couldn't retrieve that employee's permissions.", statusCode: result.status };
     const permissions = asRecord(result.data.permissions);
+    const availablePermissionKeys = catalog.data?.keys?.length ? catalog.data.keys : Object.keys(permissions);
+    const permissionCatalog = catalog.data?.permissions ?? [];
     const selected = args.permissionKey ? { [args.permissionKey]: permissions[args.permissionKey] } : permissions;
     if (args.permissionKey && !Object.prototype.hasOwnProperty.call(permissions, args.permissionKey)) {
-      return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys: Object.keys(permissions) } };
+      return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys, permissionCatalog } };
     }
-    return { ok: true, message: `Retrieved permissions for ${resolved.employee.fullName}.`, data: { employee: result.data.employee, permissions: selected, availablePermissionKeys: Object.keys(permissions) } };
+    return { ok: true, message: `Retrieved permissions for ${resolved.employee.fullName}.`, data: { employee: result.data.employee, permissions: selected, availablePermissionKeys, permissionCatalog } };
   }
-  const listed = await managementJson<{ employees: Array<Record<string, unknown>> }>(`/api/admin/permissions/employees?includePermissions=true&search=${encodeURIComponent(args.search ?? "")}`);
+  const [listed, catalog] = await Promise.all([
+    managementJson<{ employees: Array<Record<string, unknown>> }>(`/api/admin/permissions/employees?includePermissions=true&search=${encodeURIComponent(args.search ?? "")}`),
+    managementJson<{ keys?: string[]; permissions?: Array<{ key: string; label?: string; description?: string; category?: string }> }>(`/api/admin/permissions/catalog`),
+  ]);
   if (!listed.ok || !listed.data) return { ok: false, message: (listed.data as { error?: string } | null)?.error ?? "I couldn't retrieve employee permissions.", statusCode: listed.status };
   let employees = listed.data.employees ?? [];
-  const availablePermissionKeys = Object.keys(asRecord(employees[0]?.permissions));
+  const availablePermissionKeys = catalog.data?.keys?.length ? catalog.data.keys : Object.keys(asRecord(employees[0]?.permissions));
+  const permissionCatalog = catalog.data?.permissions ?? [];
   if (args.permissionKey && availablePermissionKeys.length && !availablePermissionKeys.includes(args.permissionKey)) {
-    return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys } };
+    return { ok: false, message: "That permission is not part of the current permission model. Available permission keys are included in the result.", data: { availablePermissionKeys, permissionCatalog } };
   }
   if (args.permissionKey) {
     employees = employees.filter((employee) => asRecord(employee.permissions)[args.permissionKey!] === true);
   }
-  return { ok: true, message: `Retrieved ${employees.length} employee permission record${employees.length === 1 ? "" : "s"}.`, data: { employees, availablePermissionKeys } };
+  return { ok: true, message: `Retrieved ${employees.length} employee permission record${employees.length === 1 ? "" : "s"}.`, data: { employees, availablePermissionKeys, permissionCatalog } };
 }
 
 async function proposePermissionChange(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
@@ -1258,15 +1270,15 @@ export function buildToolDefinitions(user: AgentUser) {
     })));
   }
   if (hasPermission(user, "EMPLOYEES_VIEW_DIRECTORY")) {
-    tools.push(tool("search_employees", "Search the employee directory when permitted.", objectSchema({
-      search: { type: "string" },
-      limit: { type: "number", minimum: 1, maximum: 50 },
+    tools.push(tool("search_employees", "List or search employee records visible to the user. Each record includes full name, email, employee ID, department ID/name, designation, account status (Active/Inactive) and joining date when available. Use this for employee counts, active vs inactive counts, department-wise counts, recent joiners and directory lookups. Pass search to filter by name, email, ID, department, designation or status. Pass a larger limit when counting or aggregating.", objectSchema({
+      search: { type: "string", description: "Filter by name, email, employee ID, department name/ID, designation or account status." },
+      limit: { type: "number", minimum: 1, maximum: 200 },
     })));
   }
   if (hasPermission(user, "DEPARTMENTS_VIEW")) {
-    tools.push(tool("list_departments", "List departments visible to the user.", objectSchema({
-      search: { type: "string" },
-      limit: { type: "number", minimum: 1, maximum: 50 },
+    tools.push(tool("list_departments", "List departments visible to the user, including department ID, name, description, manager and status. Use this for department counts, department existence questions and department details.", objectSchema({
+      search: { type: "string", description: "Filter by department name, ID, description or manager." },
+      limit: { type: "number", minimum: 1, maximum: 200 },
     })));
   }
   if (hasPermission(user, "DASHBOARD_VIEW_PERSONAL")) {

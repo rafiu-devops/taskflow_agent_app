@@ -141,9 +141,9 @@ export default function ChatClient({ user, conversationId: initialConversationId
         signal: controller.signal,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok && response.status !== 503 && response.status !== 429) {
-        if (response.status === 401) router.replace("/login");
-        throw new Error("Something went wrong. Please try again.");
+      if (response.status === 401) {
+        router.replace("/login");
+        throw new Error("Your session expired. Please sign in again.");
       }
       if (data.conversationId && !conversationId) {
         setConversationId(data.conversationId);
@@ -165,14 +165,18 @@ export default function ChatClient({ user, conversationId: initialConversationId
       } else {
         setMessages((current) => current.filter((message) => message.id !== tempId).concat(optimistic));
       }
-      if (!response.ok && data.error) setActionError("Something went wrong. Please try again.");
-    } catch (reason) {
+      if (!response.ok) {
+        const message = typeof data.error === "string" && data.error.trim() ? data.error : typeof data.message === "string" && data.message.trim() ? data.message : "Something went wrong. Please try again.";
+        setActionError(message);
+        playSound("error");
+      }    } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") {
         setActionError(null);
         return;
       }
       console.error(reason);
-      setActionError("Something went wrong. Please try again.");
+      const message = reason instanceof Error && reason.message.trim() ? reason.message : "Something went wrong. Please try again.";
+      setActionError(message);
       playSound("error");
       setMessages((current) => current.filter((message) => message.id !== tempId).concat(optimistic));
     } finally {

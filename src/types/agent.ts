@@ -39,6 +39,7 @@ export interface EmployeeSummary {
   departmentName?: string | null;
   designation: string | null;
   accountStatus: string | null;
+  joiningDate?: string | null;
 }
 
 export interface DepartmentSummary {

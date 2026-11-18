@@ -227,6 +227,12 @@ function knownIntent(user: AgentUser, message: string): KnownIntent | null {
   }
   if (/\b(list|show|view|search|find)\b/.test(normalized) && /\b(departments?|teams)\b/.test(normalized)) return { tool: "list_departments", args: {} };
   if (/\b(list|show|view|search|find)\b/.test(normalized) && /\b(employees?|staff|team members)\b/.test(normalized)) return { tool: "search_employees", args: {} };
+  if (/\b(how many|kitne|kitna|count|total|exist|existing|registered)\b/.test(normalized) && /\b(employee|employees|staff|team members)\b/.test(normalized)) return { tool: "search_employees", args: { limit: 200 } };
+  if (/\b(how many|kitne|kitna|count|total|exist|existing)\b/.test(normalized) && /\b(department|departments|teams)\b/.test(normalized)) return { tool: "list_departments", args: { limit: 200 } };
+  if (/\b(how many|kitne|kitna|count|total|exist|existing|any|what)\b/.test(normalized) && /\b(task|tasks|pending|completed|overdue)\b/.test(normalized)) {
+    const status = /\bpending\b/.test(normalized) ? "Pending" : /\bin progress\b/.test(normalized) ? "In Progress" : /\bcompleted|finished\b/.test(normalized) ? "Completed" : undefined;
+    return { tool: "list_tasks", args: status ? { status } : {} };
+  }
   if (/\b(list|show|view|find|which|what)\b/.test(normalized) && /\b(tasks?|overdue|pending)\b/.test(normalized)) {
     const status = /\bpending\b/.test(normalized) ? "Pending" : /\bin progress\b/.test(normalized) ? "In Progress" : undefined;
     return { tool: "list_tasks", args: status ? { status } : {} };
@@ -293,7 +299,7 @@ export async function runAgent(user: AgentUser, messages: ChatMessage[]): Promis
         parts.push({ type: "text", text: stripInternalMentions(text, internalTokens) });
       }
       if (!parts.length) {
-        parts.push({ type: "text", text: "I’m not sure how to respond to that yet." });
+        parts.push({ type: "text", text: "I couldn't determine how to help with that request. Could you rephrase it or tell me which module you're asking about (employees, departments, tasks, or performance)?" });
       }
       return { parts };
     }
