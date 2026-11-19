@@ -1,48 +1,260 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   TaskFlow AI — design tokens
+   Single source of truth for colour, shadow and radius across the app.
+   Components must reference these tokens instead of hardcoding values.
+------------------------------------------------------------------ */
+
 :root {
   color-scheme: light;
-  --bg: #F6F8FB;
-  --surface: #FFFFFF;
-  --ink: #0B1220;
-  --ink-muted: #5B6577;
-  --border: #E3E8EF;
-  --brand: #0A84FF;
+
+  --bg: #f5f8ff;
+  --surface: #ffffff;
+  --surface-soft: #eaf1ff;
+  --ink: #101c3d;
+  --ink-muted: #667493;
+  --border: #dce6fa;
+  --brand: #2563eb;
+  --brand-bright: #1765ff;
+  --navy: #071a4a;
+  --sidebar: #0b1742;
+  --success: #16b86a;
+  --danger: #e5484d;
+  --warning: #b26a00;
+
+  --ring-brand: rgb(37 99 235 / 0.28);
+  --scrim: rgb(7 26 74 / 0.45);
+
+  /* Semantic accents used by quick actions, badges and card icons. */
+  --accent-blue: #2563eb;
+  --accent-green: #16b86a;
+  --accent-violet: #7c3aed;
+  --accent-cyan: #0891b2;
+  --accent-amber: #d97706;
+  --accent-rose: #e11d4d;
+  --accent-indigo: #4f46e5;
+  --accent-teal: #0d9488;
+
+  --shadow-card: 0 1px 2px rgb(16 28 61 / 0.04), 0 8px 24px rgb(37 99 235 / 0.06);
+  --shadow-float: 0 24px 60px rgb(7 26 74 / 0.1);
+  --shadow-glow: 0 10px 30px rgb(37 99 235 / 0.12);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.6);
+
+  --gradient-welcome: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #f2f7ff 45%, #e9f1ff 100%);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: #07112b;
+  --surface: #0e1a3a;
+  --surface-soft: #12224a;
+  --ink: #eaf1ff;
+  --ink-muted: #9fb0d3;
+  --border: #1e3366;
+  --brand: #4f8cff;
+  --brand-bright: #6fa3ff;
+  --navy: #040b1f;
+  --sidebar: #050d22;
+  --success: #2dd48a;
+  --danger: #ff6369;
+  --warning: #f0b429;
+
+  --ring-brand: rgb(79 140 255 / 0.35);
+  --scrim: rgb(2 6 18 / 0.65);
+
+  --accent-blue: #6fa3ff;
+  --accent-green: #34d399;
+  --accent-violet: #a78bfa;
+  --accent-cyan: #22d3ee;
+  --accent-amber: #fbbf24;
+  --accent-rose: #fb7185;
+  --accent-indigo: #818cf8;
+  --accent-teal: #2dd4bf;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.28);
+  --shadow-float: 0 24px 60px rgb(0 0 0 / 0.45);
+  --shadow-glow: 0 10px 30px rgb(79 140 255 / 0.18);
+  --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.04);
+
+  --gradient-welcome: radial-gradient(120% 90% at 50% 0%, #0e1a3a 0%, #0a1533 45%, #07112b 100%);
 }
 
 @theme {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-border: var(--border);
   --color-brand: var(--brand);
+  --color-brand-bright: var(--brand-bright);
+  --color-navy: var(--navy);
+  --color-sidebar: var(--sidebar);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-green: var(--accent-green);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-rose: var(--accent-rose);
+  --color-accent-indigo: var(--accent-indigo);
+  --color-accent-teal: var(--accent-teal);
+
+  /* Aliases so Tailwind colour utilities such as `text-foreground`,
+     `bg-primary` and `border-primary` resolve to the design tokens. */
+  --color-foreground: var(--ink);
+  --color-primary: var(--brand);
+  --color-muted: var(--ink-muted);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+  --shadow-glow: var(--shadow-glow);
+
   --font-sans: var(--font-geist-sans), "Noto Nastaliq Urdu", "Noto Sans Arabic", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
 html {
   min-height: 100%;
-  color-scheme: light;
 }
 
 body {
   min-height: 100vh;
-  background: var(--color-background);
-  color: var(--color-foreground);
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* --- shared building blocks -------------------------------------- */
+
+.tf-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-card);
+}
+
+.tf-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 2rem;
+  box-shadow: var(--shadow-float);
+}
+
+.tf-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: var(--color-brand);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow-glow);
+  transition: background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tf-btn-primary:hover {
+  background-color: var(--color-brand-bright);
+  transform: translateY(-1px);
+}
+
+.tf-btn-primary:active {
+  transform: translateY(0);
+}
+
+.tf-btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.tf-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 600;
+  border-radius: 0.9rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.tf-btn-ghost:hover {
+  background-color: var(--color-surface-soft);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.tf-field {
+  width: 100%;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  color: var(--color-ink);
+  font-size: 0.9rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.tf-field::placeholder {
+  color: var(--color-ink-muted);
+}
+
+.tf-field:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 4px var(--ring-brand);
+}
+
+.tf-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+
+.tf-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.tf-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(102 116 147 / 0.35);
+  border-radius: 999px;
+}
+
+.tf-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- focus + scrollbars ------------------------------------------ */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #C2D2DE transparent;
+  scrollbar-color: #9fb0d3 transparent;
 }
 
-button, a, input, textarea, select {
+button,
+a,
+input,
+textarea,
+select {
   -webkit-tap-highlight-color: transparent;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
 
@@ -53,12 +265,20 @@ label:focus-visible {
   outline: none;
 }
 
+::selection {
+  background-color: rgb(37 99 235 / 0.22);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 }
+
+
 

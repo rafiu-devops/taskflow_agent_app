@@ -31,7 +31,7 @@ export default function MessageCards({ cards }: { cards: ChatCard[] }) {
 function Shell({ icon: Icon, title, subtitle, children }: { icon: typeof ClipboardList; title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
-      <div className="flex items-center gap-3 border-b border-[var(--border)]/70 bg-[#F7FBFE] px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-[var(--border)]/70 bg-surface-soft px-4 py-3">
         <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--ink)] text-[var(--surface)]"><Icon className="h-4 w-4" aria-hidden="true" /></div>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[var(--ink)]">{title}</h3>
@@ -49,7 +49,7 @@ function TasksCard({ card }: { card: Extract<ChatCard, { type: "tasks" }> }) {
   }
   return (
     <Shell icon={ClipboardList} title={card.title} subtitle={card.subtitle}>
-      <ul className="divide-y divide-line/70">
+      <ul className="divide-y divide-border">
         {card.tasks.map((task) => (
           <li key={task.taskId} className="py-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -82,7 +82,7 @@ function PerformanceCard({ card }: { card: Extract<ChatCard, { type: "performanc
     <Shell icon={BarChart3} title={card.title} subtitle={card.subtitle}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {card.metrics.map((metric) => (
-          <div key={metric.label} className="rounded-2xl bg-[#F7FBFE] p-3">
+          <div key={metric.label} className="rounded-2xl bg-surface-soft p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">{metric.label}</p>
             <p className="mt-1 text-xl font-semibold text-[var(--ink)]">{metric.value}</p>
             {metric.note && <p className="mt-0.5 text-[10px] text-[var(--ink-muted)]">{metric.note}</p>}
@@ -99,7 +99,7 @@ function PerformanceCard({ card }: { card: Extract<ChatCard, { type: "performanc
               {hasOverdue && <th className="py-2 pr-3">Overdue</th>}
               {hasCompletionRate && <th className="py-2">Rate</th>}
             </tr></thead>
-            <tbody className="divide-y divide-line/70 text-[var(--ink)]">
+            <tbody className="divide-y divide-border text-[var(--ink)]">
               {rows.map((row) => (
                 <tr key={row.name}>
                   <td className="py-2 pr-3 font-medium">{row.name}</td>
@@ -138,7 +138,7 @@ function EmployeesCard({ card }: { card: Extract<ChatCard, { type: "employees" }
     <Shell icon={Users} title={card.title} subtitle={`Showing ${card.employees.length} of ${card.total}`}>
       <ul className="grid gap-2 sm:grid-cols-2">
         {card.employees.map((employee) => (
-          <li key={employee.employeeId} className="rounded-2xl border border-[var(--border)]/70 bg-[#F7FBFE] p-3">
+          <li key={employee.employeeId} className="rounded-2xl border border-[var(--border)]/70 bg-surface-soft p-3">
             <p className="text-sm font-semibold text-[var(--ink)]">{employee.fullName}</p>
             <p className="mt-0.5 text-[11px] text-[var(--ink-muted)]">{employee.employeeId} · {employee.departmentName || employee.departmentId || "No department"}</p>
             <p className="mt-1 text-[11px] text-[var(--ink-muted)]">{employee.email || "Contact hidden"}</p>
@@ -154,7 +154,7 @@ function DepartmentsCard({ card }: { card: Extract<ChatCard, { type: "department
   if (!card.departments.length) return <Shell icon={Building2} title={card.title}><EmptyState message={card.emptyMessage ?? "No departments found."} /></Shell>;
   return (
     <Shell icon={Building2} title={card.title}>
-      <ul className="divide-y divide-line/70">
+      <ul className="divide-y divide-border">
         {card.departments.map((department) => (
           <li key={department.departmentId} className="flex items-center justify-between gap-3 py-2 text-sm">
             <div><p className="font-medium text-[var(--ink)]">{department.departmentName}</p><p className="text-[11px] text-[var(--ink-muted)]">{department.departmentId}{department.manager ? ` · ${department.manager}` : ""}</p></div>

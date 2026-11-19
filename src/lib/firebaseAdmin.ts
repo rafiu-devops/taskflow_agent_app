@@ -46,5 +46,14 @@ const app =
       });
 
 export const firestore = getFirestore(app);
-firestore.settings({ ignoreUndefinedProperties: true });
+
+// settings() may only be called once per Firestore instance and before any
+// other method. Under dev HMR this module can be re-evaluate while the
+// instance is cached, so key the guard to the instance itself.
+const globals = globalThis as { __taskflowFirestoreSettingsApplied?: unknown };
+if (globals.__taskflowFirestoreSettingsApplied !== firestore) {
+  firestore.settings({ ignoreUndefinedProperties: true });
+  globals.__taskflowFirestoreSettingsApplied = firestore;
+}
+
 export const db = firestore;

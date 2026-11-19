@@ -1,248 +1,127 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { LogOut, Menu, MessageSquarePlus, Search, Settings, X } from "lucide-react";
-import type { AgentUser, ConversationSummary } from "@/types/agent";
-import { cn, initials } from "@/lib/utils";
-import ConversationMenu from "@/components/history/ConversationMenu";
+import { usePathname } from "next/navigation";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
+import type { AgentUser } from "@/types/agent";
+import AppSidebar from "@/components/layout/AppSidebar";
+import MobileHeader from "@/components/layout/MobileHeader";
+import MobileBottomNavigation from "@/components/layout/MobileBottomNavigation";
 
-const AppShellContext = createContext<{ openSidebar: () => void } | null>(null);
+type ShellContextValue = {
+  openSidebar: () => void;
+  /** Live signed-in profile — updated in place when Settings saves a new name. */
+  user: AgentUser;
+  updateUser: (user: AgentUser) => void;
+};
 
-export function useAppShell() {
+const AppShellContext = createContext<ShellContextValue | null>(null);
+
+/**
+ * Access shell chrome (drawer + live profile).
+ * Throws outside AppShell so misuse fails loudly instead of silently.
+ */
+export function useAppShell(): ShellContextValue {
   const context = useContext(AppShellContext);
   if (!context) throw new Error("useAppShell must be used inside AppShell");
   return context;
 }
 
-type GroupedConversations = { label: string; items: ConversationSummary[] }[];
-
-function groupConversations(items: ConversationSummary[]): GroupedConversations {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfYesterday = new Date(startOfToday);
-  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  const startOfWeek = new Date(startOfToday);
-  startOfWeek.setDate(startOfWeek.getDate() - 7);
-
-  const groups: GroupedConversations = [
-    { label: "Today", items: [] },
-    { label: "Yesterday", items: [] },
-    { label: "Previous 7 days", items: [] },
-  ];
-
-  for (const item of items) {
-    const date = new Date(item.updatedAt);
-    if (date >= startOfToday) groups[0].items.push(item);
-    else if (date >= startOfYesterday) groups[1].items.push(item);
-    else if (date >= startOfWeek) groups[2].items.push(item);
-  }
-
-  return groups.filter((group) => group.items.length > 0);
-}
-
-export default function AppShell({ user, children }: { user: AgentUser; children: React.ReactNode }) {
+/**
+ * Application frame: fixed navy sidebar on desktop, branded header + bottom
+ * tab bar on mobile, and a shared user context so profile edits propagate to
+ * the sidebar and welcome greeting without a reload.
+ */
+export default function AppShell({
+  user,
+  children,
+}: {
+  user: AgentUser;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [search, setSearch] = useState("");
-  const [installPrompt, setInstallPrompt] = useState<null | { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }>(null);
-  const drawerRef = useRef<HTMLDivElement>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [profileUser, setProfileUser] = useState<AgentUser>(user);
+  const [prevUser, setPrevUser] = useState<AgentUser>(user);
+
+  // The server re-renders the layout with the fresh profile after a save or a
+  // navigation; mirror it into local state so the chrome updates immediately.
+  // Adjusted during render (instead of a sync effect) per React's guidance —
+  // the guard makes it a no-op during hydration.
+  if (prevUser !== user) {
+    setPrevUser(user);
+    setProfileUser(user);
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") setDrawerOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/conversations", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return;
-        setConversations(data.conversations ?? []);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
+  // Chat screens render their own top bar (branded on the welcome state,
+  // conversation header once a thread has messages).
+  const onChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as unknown as { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> });
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  const updateUser = useMemo(() => (next: AgentUser) => setProfileUser(next), []);
 
-  const context = useMemo(() => ({ openSidebar: () => setOpen(true) }), []);
-
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return conversations;
-    return conversations.filter((item) => item.title.toLowerCase().includes(query));
-  }, [conversations, search]);
-
-  const grouped = useMemo(() => groupConversations(filtered), [filtered]);
-
-  async function signOut() {
-    setSigningOut(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.replace("/login");
-      router.refresh();
-    } finally {
-      setSigningOut(false);
-    }
-  }
-
-  const sidebar = (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 lg:gap-4">
-      <Link href="/chat" onClick={() => setOpen(false)} className="flex shrink-0 items-center gap-3 rounded-xl p-2 hover:bg-[var(--bg)]">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--brand)] text-xs font-black text-white">TF</div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold tracking-tight text-[var(--ink)]">TaskFlow AI</p>
-          <p className="truncate text-[11px] text-[var(--ink-muted)]">Operations assistant</p>
-        </div>
-      </Link>
-
-      <Link
-        href="/chat"
-        onClick={() => setOpen(false)}
-        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-semibold text-white transition hover:opacity-90"
-      >
-        <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
-        New chat
-      </Link>
-
-      <div className="relative shrink-0">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-muted)]" aria-hidden="true" />
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search chats"
-          className="h-9 w-full rounded-full border border-[var(--border)] bg-[var(--surface)] pl-9 pr-3 text-sm outline-none focus:border-[var(--brand)]"
-        />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="space-y-4">
-          {grouped.map((group) => (
-            <section key={group.label}>
-              <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ink-muted)]">{group.label}</p>
-              <div className="mt-1 space-y-0.5">
-                {group.items.map((item) => {
-                  const active = pathname === `/chat/${item.id}`;
-                  return (
-                    <div key={item.id} className="group flex items-center gap-1">
-                      <Link
-                        href={`/chat/${item.id}`}
-                        onClick={() => setOpen(false)}
-                        className={cn(
-                          "min-w-0 flex-1 truncate rounded-xl px-3 py-2 text-sm transition",
-                          active ? "bg-[var(--border)] font-medium text-[var(--ink)]" : "text-[var(--ink-muted)] hover:bg-[var(--bg)] hover:text-[var(--ink)]",
-                        )}
-                      >
-                        {item.title}
-                      </Link>
-                      <div className="opacity-0 transition group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-                        <ConversationMenu conversation={item} onChange={() => fetch("/api/conversations").then((r) => r.json()).then((d) => setConversations(d.conversations ?? [])).catch(() => undefined)} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-          {!grouped.length && <p className="px-2 text-xs text-[var(--ink-muted)]">No conversations yet.</p>}
-        </div>
-        {installPrompt && (
-          <div className="mt-4 border-t border-[var(--border)] pt-3">
-            <button
-              type="button"
-              onClick={async () => {
-                await installPrompt.prompt();
-                await installPrompt.userChoice.catch(() => undefined);
-                setInstallPrompt(null);
-              }}
-              className="text-left text-xs font-medium text-[var(--brand)] hover:underline"
-            >
-              Install app
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="shrink-0 border-t border-[var(--border)] pt-3">
-        <div className="flex items-center gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--border)] text-xs font-bold text-[var(--ink)]">{initials(user.name)}</div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-[var(--ink)]">{user.name}</p>
-            <p className="truncate text-[11px] text-[var(--ink-muted)]">{user.email}</p>
-          </div>
-          <Link href="/settings" onClick={() => setOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--ink-muted)] hover:bg-[var(--border)]" aria-label="Settings">
-            <Settings className="h-4 w-4" aria-hidden="true" />
-          </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            disabled={signingOut}
-            aria-label="Sign out"
-            className="grid h-9 w-9 place-items-center rounded-xl text-[var(--ink-muted)] hover:bg-[var(--border)] disabled:opacity-60"
-          >
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </div>
+  const context = useMemo<ShellContextValue>(
+    () => ({ openSidebar: () => setDrawerOpen(true), user: profileUser, updateUser }),
+    [profileUser, updateUser],
   );
 
   return (
     <AppShellContext.Provider value={context}>
-      <div className="min-h-screen bg-transparent text-foreground">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden h-dvh w-72 flex-col border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:flex">
-          {sidebar}
-        </aside>
+      <div className="flex h-dvh flex-col overflow-hidden bg-bg text-ink">
+        {!onChatRoute && <MobileHeader onOpenMenu={() => setDrawerOpen(true)} />}
 
-        {open && (
-          <div className="fixed inset-0 z-40 lg:hidden" role="presentation">
-            <button className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" aria-label="Close menu" onClick={() => setOpen(false)} />
-            <aside ref={drawerRef} className="absolute inset-y-0 left-0 flex h-dvh w-[min(20rem,88vw)] flex-col border-r border-[var(--border)]/80 bg-[var(--surface)] p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
-              <div className="mb-2 flex shrink-0 items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-muted)]">Menu</p>
-                <button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="rounded-xl p-2 text-[var(--ink-muted)] hover:bg-[var(--border)]">
+        <div className="flex min-h-0 flex-1">
+          <aside
+            aria-label="Sidebar"
+            className="hidden w-72 shrink-0 flex-col border-r border-white/10 bg-sidebar pt-[max(1rem,env(safe-area-inset-top))] pr-4 pb-4 pl-4 text-white lg:flex"
+          >
+            <AppSidebar user={profileUser} />
+          </aside>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+
+        <MobileBottomNavigation />
+      </div>
+
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setDrawerOpen(false)}
+            className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm"
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            className="absolute inset-y-0 left-0 flex h-dvh w-[min(20rem,88vw)] flex-col border-r border-white/10 bg-sidebar pt-[max(1rem,env(safe-area-inset-top))] pr-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-4 text-white shadow-[0_0_60px_rgba(0,0,0,0.5)]"
+          >
+            <AppSidebar
+              user={profileUser}
+              onNavigate={() => setDrawerOpen(false)}
+              closeControl={
+                <button
+                  type="button"
+                  onClick={() => setDrawerOpen(false)}
+                  aria-label="Close menu"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white/60 transition hover:bg-white/10 hover:text-white"
+                >
                   <X className="h-5 w-5" aria-hidden="true" />
                 </button>
-              </div>
-              {sidebar}
-            </aside>
-          </div>
-        )}
-
-        <div className="min-h-screen lg:pl-72">{children}</div>
-      </div>
+              }
+            />
+          </aside>
+        </div>
+      )}
     </AppShellContext.Provider>
-  );
-}
-
-export function MobileMenuButton({ className = "" }: { className?: string }) {
-  const { openSidebar } = useAppShell();
-  return (
-    <button
-      type="button"
-      onClick={openSidebar}
-      aria-label="Open menu"
-      className={cn("grid h-11 w-11 place-items-center rounded-2xl bg-[var(--surface)] text-[var(--ink)] shadow-sm transition hover:bg-[var(--bg)] lg:hidden", className)}
-    >
-      <Menu className="h-5 w-5" aria-hidden="true" />
-    </button>
   );
 }

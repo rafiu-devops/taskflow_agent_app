@@ -800,17 +800,35 @@ async function proposeCreateEmployee(user: AgentUser, rawArgs: unknown): Promise
 }
 
 async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>, message: string): Promise<ToolExecutionResult> {
-  const result = await managementJson<{ departments: DepartmentSummary[] }>("/api/departments");
-  if (!result.ok || !result.data) {
-    const statusCode = result.status >= 400 ? result.status : 503;
+  const [departmentResult, employeeResult] = await Promise.all([
+    managementJson<{ departments: DepartmentSummary[] }>("/api/departments"),
+    managementJson<{ employees: EmployeeSummary[] }>("/api/employees"),
+  ]);
+  if (!departmentResult.ok || !departmentResult.data) {
+    const statusCode = departmentResult.status >= 400 ? departmentResult.status : 503;
     return {
       ok: false,
-      permissionRequired: result.status === 403 ? "DEPARTMENTS_VIEW" : undefined,
-      message: result.status === 403 ? "You do not have permission to view departments." : "Unable to load departments. No employee was created.",
+      permissionRequired: departmentResult.status === 403 ? "DEPARTMENTS_VIEW" : undefined,
+      message: departmentResult.status === 403 ? "You do not have permission to view departments." : "Unable to load departments. No employee was created.",
       statusCode,
     };
   }
-  const departments = result.data.departments ?? [];
+  const departments = departmentResult.data.departments ?? [];
+  const employees = employeeResult.ok && employeeResult.data ? employeeResult.data.employees ?? [] : [];
+  let suggestedEmployeeId = args.employeeId ?? "";
+  if (!suggestedEmployeeId) {
+    let max = 0;
+    for (const employee of employees) {
+      const match = String(employee.employeeId ?? "").match(/^EMP-(\\d+)$/i);
+      if (match) {
+        const value = parseInt(match[1], 10);
+        if (value > max) max = value;
+      }
+    }
+    suggestedEmployeeId = `EMP-${String(max + 1).padStart(3, "0")}`;
+  }
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi" }).format(new Date());
+  const suggestedJoiningDate = args.joiningDate ?? today;
   const selectedDepartment = departments.find((department) =>
     department.departmentId.toLowerCase() === (args.departmentId ?? args.department ?? "").toLowerCase()
       || department.departmentName.toLowerCase() === (args.department ?? "").toLowerCase(),
@@ -822,7 +840,7 @@ async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>,
     fields: [
       { key: "fullName", label: "Full name", type: "text", required: true, defaultValue: args.fullName ?? "", placeholder: "e.g. Ali Raza" },
       { key: "email", label: "Work email", type: "email", required: true, defaultValue: args.email ?? "", placeholder: "e.g. ali.raza@taskflow.com" },
-      { key: "employeeId", label: "Employee ID", type: "text", required: false, defaultValue: args.employeeId ?? "", placeholder: "Leave blank for automatic assignment" },
+      { key: "employeeId", label: "Employee ID", type: "text", required: false, defaultValue: suggestedEmployeeId, placeholder: "e.g. EMP-001" },
       {
         key: "departmentId",
         label: "Department",
@@ -836,7 +854,7 @@ async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>,
       },
       { key: "designation", label: "Designation", type: "text", required: false, defaultValue: args.designation ?? "", placeholder: "e.g. Software Engineer" },
       { key: "accountStatus", label: "Employment status", type: "select", required: false, defaultValue: args.accountStatus === "Inactive" ? "Inactive" : "Active", options: [{ label: "Active", value: "Active" }, { label: "Inactive", value: "Inactive" }] },
-      { key: "joiningDate", label: "Joining date", type: "date", required: false, defaultValue: args.joiningDate ?? "", placeholder: "YYYY-MM-DD" },
+      { key: "joiningDate", label: "Joining date", type: "date", required: false, defaultValue: suggestedJoiningDate, placeholder: "YYYY-MM-DD" },
     ],
   };
   return { ok: true, message, data: { card }, card };
@@ -1059,7 +1077,9 @@ async function proposeUpdateDepartment(user: AgentUser, rawArgs: unknown): Promi
   const raw = asRecord(rawArgs);
   const target = typeof raw.department === "string" ? raw.department : typeof raw.departmentId === "string" ? raw.departmentId : "";
   if (!target.trim()) return { ok: false, message: "Which department would you like to update?" };
-  const { department: _department, departmentId: _departmentId, ...fields } = raw;
+  const fields: Record<string, unknown> = { ...raw };
+  delete fields.department;
+  delete fields.departmentId;
   const patch = departmentMutationSchema.parse(fields);
   if (!Object.keys(patch).length) return { ok: false, message: "What should I change for that department?" };
   const resolved = await resolveDepartment(user, target);

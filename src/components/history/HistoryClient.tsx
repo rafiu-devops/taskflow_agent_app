@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MessageSquarePlus, Plus, Search } from "lucide-react";
 import type { ConversationSummary } from "@/types/agent";
-import AppHeader from "@/components/layout/AppHeader";
-import ConversationMenu from "@/components/history/ConversationMenu";
+import ConversationList from "@/components/history/ConversationList";
 
 type ConversationFetchResult = { conversations?: ConversationSummary[]; error?: string };
 
@@ -21,143 +19,161 @@ async function fetchConversations(): Promise<ConversationFetchResult> {
   }
 }
 
+/** Conversation history: searchable, grouped by day, with rename/delete. */
 export default function HistoryClient() {
-
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const applyConversationResult = useCallback((result: ConversationFetchResult) => {
-    if (result.error) {
-      setError(result.error);
-    } else {
+  const apply = useCallback((result: ConversationFetchResult) => {
+    if (result.error) setError(result.error);
+    else {
       setConversations(result.conversations ?? []);
       setError(null);
     }
   }, []);
 
   const load = useCallback(async () => {
-    applyConversationResult(await fetchConversations());
+    apply(await fetchConversations());
     setLoading(false);
-  }, [applyConversationResult]);
+  }, [apply]);
 
   useEffect(() => {
     let cancelled = false;
     fetchConversations().then((result) => {
       if (cancelled) return;
-      applyConversationResult(result);
+      apply(result);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [applyConversationResult]);
+  }, [apply]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return conversations;
-    return conversations.filter((conversation) => [conversation.title, conversation.lastMessage ?? ""].join(" ").toLowerCase().includes(q));
+    return conversations.filter((conversation) =>
+      [conversation.title, conversation.lastMessage ?? ""].join(" ").toLowerCase().includes(q),
+    );
   }, [conversations, query]);
 
-  const groups = useMemo(() => groupConversations(filtered), [filtered]);
-
   return (
-    <div className="min-h-screen px-4 pb-10 pt-4 sm:px-6 lg:px-8">
-      <AppHeader
-        variant="secondary"
-        title="Recent History"
-        right={
-          <Link href="/chat" aria-label="New chat" className="grid h-10 w-10 place-items-center rounded-xl text-[var(--brand)] hover:bg-[var(--bg)]">
-            <Plus className="h-5 w-5" aria-hidden="true" />
+    <div className="tf-scroll h-full min-h-0 overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-4 pt-6 pb-12 sm:px-6 sm:pt-8 lg:px-8">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="tf-eyebrow">Conversations</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+              Chat history
+            </h1>
+            <p className="mt-1.5 text-[13.5px] text-ink-muted">
+              {loading
+                ? "Loading your conversations…"
+                : `${conversations.length} conversation${conversations.length === 1 ? "" : "s"} saved to your account`}
+            </p>
+          </div>
+
+          <Link href="/chat" className="tf-btn-primary h-11 shrink-0 px-4 text-sm">
+            <Plus className="h-4.5 w-4.5" aria-hidden="true" />
+            New chat
           </Link>
-        }
-      />
+        </header>
 
-      <main className="mx-auto mt-6 max-w-4xl">
-        <div className="rounded-[2.5rem] border border-white/70 bg-[var(--surface)]/80 p-4 shadow-[0_24px_60px_rgba(7,20,38,0.10)] backdrop-blur sm:p-6">
-          <label className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[#F7FBFE] px-4 py-3 focus-within:border-primary focus-within:bg-[var(--surface)]">
-            <Search className="h-4 w-4 text-[var(--ink-muted)]" aria-hidden="true" />
-            <span className="sr-only">Search history</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations..." className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--ink-muted)]" />
-          </label>
+        <label className="mt-6 flex items-center gap-2.5 rounded-2xl border border-border bg-surface px-4 py-3 shadow-card transition focus-within:border-brand focus-within:shadow-glow">
+          <Search className="h-4.5 w-4.5 shrink-0 text-ink-muted" aria-hidden="true" />
+          <span className="sr-only">Search conversations</span>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search conversations..."
+            className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold text-ink-muted transition hover:bg-surface-soft hover:text-ink"
+            >
+              Clear
+            </button>
+          )}
+        </label>
 
-          {error && <p role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</p>}
+        {error && (
+          <p
+            role="alert"
+            className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+          >
+            {error}
+          </p>
+        )}
 
+        <div className="mt-7">
           {loading ? (
-            <div className="mt-5 space-y-3">{Array.from({ length: 6 }, (_, i) => <div key={i} className="h-20 animate-pulse rounded-3xl bg-[var(--border)]" />)}</div>
-          ) : groups.length ? (
-            <div className="mt-5 space-y-7">
-              {groups.map((group) => (
-                <section key={group.label} aria-labelledby={`history-${group.label}`}>
-                  <h2 id={`history-${group.label}`} className="px-2 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--ink-muted)]">{group.label}</h2>
-                  <ul className="mt-2 divide-y divide-line/70">
-                    {group.items.map((conversation) => (
-                      <li key={conversation.id} className="flex items-center gap-2 py-2">
-                        <Link href={`/chat/${conversation.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-3xl p-3 transition hover:bg-[var(--bg)]">
-                          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--ink)] text-[10px] font-black text-[var(--surface)]">TF</div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[var(--ink)]">{conversation.title}</p>
-                            <p className="mt-1 text-[11px] text-[var(--ink-muted)]">{relativeTime(conversation.updatedAt)} · {conversation.messageCount} message{conversation.messageCount === 1 ? "" : "s"}</p>
-                            {conversation.lastMessage && <p className="mt-0.5 truncate text-[11px] text-[var(--ink-muted)]">{conversation.lastMessage}</p>}
-                          </div>
-                        </Link>
-                        <ConversationMenu conversation={conversation} onChange={load} />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+            <div className="space-y-3" aria-busy="true" aria-label="Loading conversations">
+              {Array.from({ length: 5 }, (_, index) => (
+                <div
+                  key={index}
+                  className="h-[74px] animate-pulse rounded-2xl bg-surface-soft"
+                  style={{ animationDelay: `${index * 80}ms` }}
+                />
               ))}
             </div>
           ) : (
-            <div className="px-6 py-16 text-center">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-[2rem] bg-[var(--bg)] text-[var(--brand)]"><MessageSquarePlus className="h-7 w-7" aria-hidden="true" /></div>
-              <h2 className="mt-5 text-base font-semibold text-[var(--ink)]">{query ? "No matching conversations" : "No conversations yet"}</h2>
-              <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--ink-muted)]">{query ? "Try a different search." : "Ask TaskFlow AI a question and your history will appear here."}</p>
-              <Link href="/chat" className="mt-6 inline-flex rounded-2xl bg-[var(--brand)] px-5 py-3 text-sm font-bold text-white">Start a new chat</Link>
-            </div>
+            <ConversationList
+              conversations={filtered}
+              variant="page"
+              preset="page"
+              onChanged={load}
+              empty={
+                <EmptyState query={query} hasAny={conversations.length > 0} />
+              }
+            />
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }
 
-function dayKey(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Previous";
-  const today = new Date();
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const startOfThat = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffDays = Math.floor((startOfToday.getTime() - startOfThat.getTime()) / 86_400_000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return "Previous";
-}
-
-function groupConversations(conversations: ConversationSummary[]): Array<{ label: string; items: ConversationSummary[] }> {
-  const order = ["Today", "Yesterday", "Previous"];
-  const groups = new Map<string, ConversationSummary[]>();
-  for (const conversation of conversations) {
-    const label = dayKey(conversation.updatedAt);
-    const list = groups.get(label) ?? [];
-    list.push(conversation);
-    groups.set(label, list);
+/** Search-aware empty state for the history page. */
+function EmptyState({ query, hasAny }: { query: string; hasAny: boolean }) {
+  if (query) {
+    return (
+      <div className="rounded-3xl border border-dashed border-border bg-surface-soft/50 px-6 py-14 text-center">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-surface text-ink-muted">
+          <Search className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <h2 className="mt-4 text-base font-semibold text-ink">No matching conversations</h2>
+        <p className="mx-auto mt-2 max-w-sm text-[13.5px] leading-6 text-ink-muted">
+          Nothing matches “{query}”. Try a different search term.
+        </p>
+      </div>
+    );
   }
-  return order.filter((label) => groups.has(label)).map((label) => ({ label, items: groups.get(label)! }));
-}
 
-function relativeTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+  if (hasAny) {
+    return (
+      <div className="rounded-3xl border border-dashed border-border bg-surface-soft/50 px-6 py-14 text-center">
+        <p className="text-[13.5px] text-ink-muted">No conversations match your search.</p>
+      </div>
+    );
+  }
 
+  return (
+    <div className="rounded-3xl border border-dashed border-border bg-surface-soft/50 px-6 py-14 text-center">
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand/12 text-brand">
+        <MessageSquarePlus className="h-6 w-6" aria-hidden="true" />
+      </span>
+      <h2 className="mt-4 text-base font-semibold text-ink">No conversations yet</h2>
+      <p className="mx-auto mt-2 max-w-sm text-[13.5px] leading-6 text-ink-muted">
+        Ask TaskFlow AI a question and your history will appear here.
+      </p>
+      <Link href="/chat" className="tf-btn-primary mt-6 h-11 px-5 text-sm">
+        Start a new chat
+      </Link>
+    </div>
+  );
+}

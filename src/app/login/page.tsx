@@ -4,34 +4,34 @@ import { getManagementUser } from "@/lib/auth/server";
 
 export default async function LoginPage() {
   const user = await getManagementUser();
-  if (user) redirect("/home");
+  if (user) redirect("/chat");
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-8">
       <section className="grid w-full max-w-5xl overflow-hidden rounded-[2.5rem] bg-surface shadow-[0_30px_80px_rgba(7,20,38,0.18)] lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative hidden min-h-[30rem] flex-col justify-between overflow-hidden bg-[var(--ink)] p-10 text-white lg:flex">
-          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-cyan/20 blur-3xl" />
-          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-[var(--brand)]/30 blur-3xl" />
+        <div className="relative hidden min-h-[30rem] flex-col justify-between overflow-hidden bg-navy p-10 text-white lg:flex">
+          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-accent-cyan/20 blur-3xl" />
+          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-brand/30 blur-3xl" />
           <div className="relative">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)] text-base font-black text-white">TF</div>
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand text-base font-black text-white">TF</div>
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--surface)]">TaskFlow</p>
-                <p className="text-xs text-slate-300">AI operations assistant</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-white">TaskFlow</p>
+                <p className="text-xs text-white/70">AI operations assistant</p>
               </div>
             </div>
             <h1 className="mt-12 max-w-md text-5xl font-semibold leading-[1.05] tracking-tight">
               Ask once.<br />Get the work done.
             </h1>
           </div>
-          <ul className="relative space-y-4 text-sm text-slate-200">
+          <ul className="relative space-y-4 text-sm text-white/85">
             {[
               "Your access stays controlled by TaskFlow permissions",
               "Every action is executed through the management backend",
               "Employees only see their own authorized records",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-cyan/15 text-xs font-bold text-[var(--surface)]">✓</span>
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-cyan/25 text-xs font-bold text-white">✓</span>
                 {item}
               </li>
             ))}
@@ -41,10 +41,10 @@ export default async function LoginPage() {
         <div className="flex flex-col justify-center p-8 sm:p-12">
           <div className="mb-8 flex self-start lg:hidden">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)] text-base font-black text-white">TF</div>
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand text-base font-black text-white">TF</div>
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[var(--brand)]">TaskFlow</p>
-                <p className="text-xs text-[var(--ink-muted)]">AI operations assistant</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-ink">TaskFlow</p>
+                <p className="text-xs text-ink-muted">AI operations assistant</p>
               </div>
             </div>
           </div>

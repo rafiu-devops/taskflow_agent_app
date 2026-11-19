@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHash, randomUUID } from "crypto";
 import type { AgentUser } from "@/types/agent";
+import { getProfile } from "@/lib/profile/store";
+import { resolveDisplayName } from "@/lib/displayName";
 
 const SESSION_COOKIE = "taskflow_session";
 
@@ -59,13 +61,24 @@ export async function managementJson<T>(
   }
 }
 
+/**
+ * Resolve the signed-in user from the management backend and layer this app's
+ * saved profile display name on top.
+ *
+ * Display name precedence: saved profile → backend name → email prefix.
+ * The full email address is never surfaced as the user's name.
+ */
 export async function getManagementUser(): Promise<AgentUser | null> {
   const result = await managementJson<{ user: AgentUser }>("/api/me");
   if (!result.ok || !result.data?.user) return null;
   const user = result.data.user;
+
+  const ownerId = ownerHash(user.email);
+  const profile = await getProfile(ownerId);
+
   return {
     ...user,
-    name: user.name || user.email,
+    name: resolveDisplayName(profile?.displayName, user.name, user.email),
     employeeId: user.employeeId ?? null,
     departmentId: user.departmentId ?? null,
     permissions: user.permissions ?? {},

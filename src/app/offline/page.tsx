@@ -16,7 +16,7 @@ export default function OfflinePage() {
         <p className="mt-3 text-sm leading-6 text-[var(--ink-muted)]">
           TaskFlow AI needs a connection to reach your workspace. Live tasks, permissions and agent actions are unavailable until you&apos;re back online.
         </p>
-        <Link href="/home" className="mt-6 inline-flex rounded-full bg-[var(--brand)] px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-200 hover:bg-[#0670e8]">
+        <Link href="/chat" className="tf-btn-primary mt-6 h-12 px-6 text-sm">
           Try again
         </Link>
         <p className="mt-4 text-xs text-[var(--ink-muted)]">Your private data is never served from an untrusted offline cache.</p>

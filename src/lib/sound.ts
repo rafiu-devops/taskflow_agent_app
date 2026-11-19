@@ -1,11 +1,22 @@
 type Kind = "send" | "receive" | "error";
 const KEY = "taskflow:sound";
+/** Dispatched (on window) whenever the stored preference changes. */
+export const SOUND_CHANGE_EVENT = "taskflow:sound-change";
 let ctx: AudioContext | null = null;
 
-export const isSoundOn = () =>
-  typeof window !== "undefined" && window.localStorage.getItem(KEY) !== "off";
-export const setSoundOn = (on: boolean) =>
+export const isSoundOn = () => {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(KEY) !== "off";
+  } catch {
+    return true;
+  }
+};
+
+export function setSoundOn(on: boolean) {
   window.localStorage.setItem(KEY, on ? "on" : "off");
+  window.dispatchEvent(new Event(SOUND_CHANGE_EVENT));
+}
 
 export function unlockAudio() {
   try {
