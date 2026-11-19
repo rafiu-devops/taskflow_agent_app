@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Info, MessageSquarePlus, Search, Settings } from "lucide-react";
+import { Info, MessageSquarePlus, Search } from "lucide-react";
 import type { AgentUser, ConversationSummary } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import BrandLogo from "@/components/layout/BrandLogo";
@@ -21,10 +21,7 @@ type AppSidebarProps = {
   closeControl?: React.ReactNode;
 };
 
-const NAV = [
-  { id: "history", label: "Chat History", href: "/history", icon: History, match: (p: string) => p.startsWith("/history") },
-  { id: "settings", label: "Settings", href: "/settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
-] as const;
+
 
 /**
  * Fixed navy navigation column shared by the desktop rail and the mobile
@@ -110,28 +107,6 @@ export default function AppSidebar({ user, onNavigate, closeControl }: AppSideba
       </Link>
 
       <nav aria-label="Primary" className="shrink-0 space-y-1">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const active = item.match(pathname);
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex h-10 items-center gap-3 rounded-xl px-3 text-[13.5px] font-medium transition",
-                active
-                  ? "bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-                  : "text-white/65 hover:bg-white/8 hover:text-white",
-              )}
-            >
-              <Icon className="h-4.5 w-4.5 shrink-0" aria-hidden="true" />
-              {item.label}
-            </Link>
-          );
-        })}
-
         <button
           type="button"
           onClick={() => setAboutOpen(true)}

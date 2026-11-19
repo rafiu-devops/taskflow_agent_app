@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, Moon, Settings, Sun } from "lucide-react";
 import type { AgentUser } from "@/types/agent";
 import { initials } from "@/lib/utils";
+import { useTheme } from "@/components/theme/ThemeProvider";
 
 type UserProfileProps = {
   user: AgentUser;
@@ -26,6 +27,7 @@ export default function UserProfile({
   compact = false,
 }: UserProfileProps) {
   const router = useRouter();
+  const { resolvedTheme, setTheme } = useTheme();
   const [signingOut, setSigningOut] = useState(false);
 
   const isDark = tone === "dark";
@@ -78,12 +80,31 @@ export default function UserProfile({
       </span>
 
       {!compact && (
-        <>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+            aria-label={resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            className={`grid h-8.5 w-8.5 place-items-center rounded-xl transition ${
+              isDark
+                ? "text-white/55 hover:bg-white/10 hover:text-white"
+                : "text-ink-muted hover:bg-surface-soft hover:text-ink"
+            }`}
+          >
+            {resolvedTheme === "dark" ? (
+              <Sun className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Moon className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+
           <Link
             href="/settings"
             onClick={onNavigate}
             aria-label="Settings"
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition ${
+            title="Settings"
+            className={`grid h-8.5 w-8.5 place-items-center rounded-xl transition ${
               isDark
                 ? "text-white/55 hover:bg-white/10 hover:text-white"
                 : "text-ink-muted hover:bg-surface-soft hover:text-ink"
@@ -97,7 +118,8 @@ export default function UserProfile({
             onClick={signOut}
             disabled={signingOut}
             aria-label="Sign out"
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition disabled:opacity-60 ${
+            title="Sign out"
+            className={`grid h-8.5 w-8.5 place-items-center rounded-xl transition disabled:opacity-60 ${
               isDark
                 ? "text-white/55 hover:bg-white/10 hover:text-white"
                 : "text-ink-muted hover:bg-danger/10 hover:text-danger"
@@ -105,7 +127,7 @@ export default function UserProfile({
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
           </button>
-        </>
+        </div>
       )}
     </div>
   );

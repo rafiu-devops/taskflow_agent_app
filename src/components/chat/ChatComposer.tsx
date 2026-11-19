@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useRef } from "react";
-import { Languages, Mic, MicOff, Send, Sparkles, Square } from "lucide-react";
+import { Mic, MicOff, Send, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ComposerSpeech = {
@@ -83,7 +83,7 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
 
         <div
           className={cn(
-            "rounded-[1.5rem] border bg-surface p-1.5 shadow-card transition",
+            "rounded-full border bg-surface p-1.5 shadow-card transition sm:rounded-[1.5rem]",
             "focus-within:border-brand focus-within:shadow-glow",
             speech.listening ? "border-rose-400/70 ring-4 ring-rose-500/12" : "border-border",
           )}
@@ -95,7 +95,7 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
               aria-label={speech.listening ? "Stop voice input" : "Start voice input"}
               aria-pressed={speech.listening}
               className={cn(
-                "grid h-11 w-11 shrink-0 place-items-center rounded-xl transition",
+                "grid h-11 w-11 shrink-0 place-items-center rounded-full transition sm:rounded-xl",
                 speech.listening
                   ? "bg-rose-500 text-white shadow-[0_6px_16px_rgba(244,63,94,0.35)]"
                   : "text-ink-muted hover:bg-surface-soft hover:text-brand",
@@ -130,7 +130,7 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
                 }
               }}
               placeholder={placeholder}
-              className="max-h-44 min-h-11 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-60"
+              className="max-h-44 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-[15px] leading-6 text-ink outline-none placeholder:truncate placeholder:text-ink-muted disabled:opacity-60"
             />
 
             {sending && onStop ? (
@@ -138,7 +138,7 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
                 type="button"
                 onClick={onStop}
                 aria-label="Stop generating"
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-surface-soft text-ink-muted transition hover:text-ink"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface-soft text-ink-muted transition hover:text-ink sm:rounded-xl"
               >
                 <Square className="h-4 w-4 fill-current" aria-hidden="true" />
               </button>
@@ -148,7 +148,7 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
                 disabled={disabled || !value.trim()}
                 aria-label="Send message"
                 className={cn(
-                  "grid h-11 w-11 shrink-0 place-items-center rounded-xl transition",
+                  "grid h-11 w-11 shrink-0 place-items-center rounded-full transition sm:rounded-xl",
                   value.trim() && !disabled
                     ? "bg-brand text-white shadow-[0_8px_18px_rgba(37,99,235,0.35)] hover:bg-brand-bright"
                     : "bg-surface-soft text-ink-muted",
@@ -156,19 +156,6 @@ const ChatComposer = forwardRef<HTMLTextAreaElement, ChatComposerProps>(function
               >
                 <Send className="h-5 w-5" aria-hidden="true" />
               </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 pb-1 pt-0.5 text-[10.5px] font-medium text-ink-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <Languages className="h-3.5 w-3.5" aria-hidden="true" />
-              Roman Urdu · اردو supported
-            </span>
-            {aiConfigured && (
-              <span className="inline-flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-                Gemini powered
-              </span>
             )}
           </div>
         </div>

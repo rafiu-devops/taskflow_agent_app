@@ -6,7 +6,6 @@ import { X } from "lucide-react";
 import type { AgentUser } from "@/types/agent";
 import AppSidebar from "@/components/layout/AppSidebar";
 import MobileHeader from "@/components/layout/MobileHeader";
-import MobileBottomNavigation from "@/components/layout/MobileBottomNavigation";
 
 type ShellContextValue = {
   openSidebar: () => void;
@@ -88,7 +87,7 @@ export default function AppShell({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
         </div>
 
-        <MobileBottomNavigation />
+
       </div>
 
       {drawerOpen && (

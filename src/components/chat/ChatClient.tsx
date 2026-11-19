@@ -9,8 +9,7 @@ import ChatMessageRow, { TypingIndicator } from "@/components/chat/ChatMessage";
 import ChatComposer from "@/components/chat/ChatComposer";
 import ConversationHeader from "@/components/chat/ConversationHeader";
 import MobileHeader from "@/components/layout/MobileHeader";
-import WelcomeHero, { WelcomeFooter } from "@/components/welcome/WelcomeHero";
-import QuickActionsGrid from "@/components/welcome/QuickActionsGrid";
+import WelcomeHero from "@/components/welcome/WelcomeHero";
 import { useAppShell } from "@/components/layout/AppShell";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { unlockAudio, playSound } from "@/lib/sound";
@@ -282,7 +281,7 @@ export default function ChatClient({
         sending={sending}
         onStop={() => abortRef.current?.abort()}
         aiConfigured={aiConfigured}
-        placeholder={user.role === "admin" ? "Ask anything...  /commands  @employee" : "Ask anything..."}
+        placeholder="Ask anything..."
         commandMenu={
           <CommandMenu
             open={commandOpen}
@@ -359,10 +358,12 @@ export default function ChatClient({
             style={{ backgroundImage: "var(--gradient-welcome)" }}
           >
             <WelcomeHero user={user} />
-            <QuickActionsGrid user={user} onSelect={(action) => void sendMessage(action.prompt)} />
-            {composer}
-            <WelcomeFooter />
+            <div className="hidden sm:block">{composer}</div>
           </div>
+        </div>
+
+        <div className="shrink-0 border-t border-border/70 bg-bg/92 px-3 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur sm:hidden">
+          <div className="mx-auto w-full max-w-3xl">{composer}</div>
         </div>
       </div>
     );
