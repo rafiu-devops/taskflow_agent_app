@@ -362,10 +362,7 @@ export default function ChatClient({
         <MobileHeader onOpenMenu={shell.openSidebar} />
 
         <div className="tf-scroll min-h-0 flex-1 overflow-y-auto">
-          <div
-            className="relative mx-auto flex w-full max-w-5xl flex-col gap-7 px-4 pt-6 pb-8 sm:px-6 sm:pt-8 lg:gap-9 lg:px-10"
-            style={{ backgroundImage: "var(--gradient-welcome)" }}
-          >
+          <div className="relative mx-auto flex min-h-full w-full max-w-5xl flex-col justify-between gap-7 px-4 pt-6 pb-8 sm:px-6 sm:pt-8 lg:gap-9 lg:px-10 bg-bg">
             <WelcomeHero user={user} />
             <div className="hidden sm:block">{composer}</div>
           </div>
