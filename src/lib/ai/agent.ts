@@ -68,6 +68,7 @@ function stripInternalMentions(text: string, tokens: string[]): string {
     const pattern = new RegExp(token.replace(/[-_]/g, "\\$&"), "gi");
     next = next.replace(pattern, " ");
   }
+  next = next.replace(/Verified operation result:\s*\{[^}]*\}/gi, "");
   return next.replace(/\s{2,}/g, " ").replace(/\s+([,.!?])/g, "$1").trim();
 }
 
