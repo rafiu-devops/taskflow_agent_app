@@ -422,7 +422,7 @@ export default function ChatClient({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border/70 bg-bg/92 px-3 pt-3 pb-[max(env(safe-area-inset-bottom),12px)] backdrop-blur sm:px-6">
+      <div className="shrink-0 px-3 pt-1 pb-[max(env(safe-area-inset-bottom),8px)] sm:px-6">
         <div className="mx-auto w-full max-w-3xl">{composer}</div>
       </div>
     </div>
