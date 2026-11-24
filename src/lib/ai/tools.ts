@@ -6,7 +6,6 @@ import { createProposal } from "@/lib/agent/proposals";
 import {
   compareTaskDate,
   isTaskOverdue,
-  normalizeTaskStatus,
   sortRecent,
   isTaskCompleted,
 } from "@/lib/tasks";
@@ -50,17 +49,26 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const isoDate = z.string().regex(datePattern, "Use YYYY-MM-DD");
 
 const listTasksSchema = z.object({
-  search: z.string().optional(),
-  status: z.enum(["Pending", "In Progress", "Completed", "Overdue"]).optional(),
-  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
-  departmentId: z.string().optional(),
-  department: z.string().optional(),
+  scope: z.enum(["my_tasks", "employee_tasks", "department_tasks", "all_tasks"]).optional(),
+  employee: z.string().optional(),
+  employeeId: z.string().optional(),
+  employeeName: z.string().optional(),
+  employees: z.array(z.string()).optional(),
   assignee: z.string().optional(),
   assignedTo: z.string().optional(),
+  assignees: z.array(z.string()).optional(),
+  department: z.string().optional(),
+  departmentId: z.string().optional(),
+  status: z.enum(["Pending", "In Progress", "Completed", "Overdue"]).optional(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
   due: z.enum(["today", "overdue"]).optional(),
+  dueDate: z.string().regex(datePattern).optional(),
+  fromDate: z.string().regex(datePattern).optional(),
+  toDate: z.string().regex(datePattern).optional(),
   assignedToday: z.boolean().optional(),
   completedToday: z.boolean().optional(),
-  limit: z.number().int().min(1).max(50).optional(),
+  search: z.string().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
 });
 
 const searchEmployeesSchema = z.object({
@@ -75,37 +83,37 @@ const listDepartmentsSchema = z.object({
 
 const createTaskSchema = z.object({
   title: z.string().min(1).max(200),
-  description: z.string().max(2000).optional(),
-  assignedTo: z.string().optional(),
-  assignee: z.string().optional(),
-  departmentId: z.string().optional(),
-  department: z.string().optional(),
-  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
-  dueDate: isoDate.optional(),
-  remarks: z.string().max(2000).optional(),
+  description: z.string().max(2000).nullish(),
+  assignedTo: z.string().nullish(),
+  assignee: z.string().nullish(),
+  departmentId: z.string().nullish(),
+  department: z.string().nullish(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).nullish(),
+  dueDate: isoDate.nullish(),
+  remarks: z.string().max(2000).nullish(),
 });
 
 const createEmployeeSchema = z.object({
   fullName: z.string().trim().min(1, "Employee full name is required").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid work email").max(254),
-  employeeId: z.string().trim().min(3).max(20).optional(),
-  departmentId: z.string().trim().min(1).max(20).optional(),
-  designation: z.string().trim().max(120).optional(),
-  accountStatus: z.enum(["Active", "Inactive"]).optional(),
-  joiningDate: z.string().regex(datePattern, "Use YYYY-MM-DD").optional(),
+  employeeId: z.string().trim().min(3).max(20).nullish(),
+  departmentId: z.string().trim().min(1).max(20).nullish(),
+  designation: z.string().trim().max(120).nullish(),
+  accountStatus: z.enum(["Active", "Inactive"]).nullish(),
+  joiningDate: z.string().regex(datePattern, "Use YYYY-MM-DD").nullish(),
 });
 
 const updateTaskSchema = z.object({
   taskId: z.string().min(1),
-  title: z.string().min(1).max(200).optional(),
-  description: z.string().max(2000).optional(),
-  assignedTo: z.string().optional(),
-  assignee: z.string().optional(),
-  departmentId: z.string().optional(),
-  department: z.string().optional(),
-  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
-  status: z.enum(["Pending", "In Progress", "Completed"]).optional(),
-  dueDate: isoDate.optional().nullable(),
+  title: z.string().min(1).max(200).nullish(),
+  description: z.string().max(2000).nullish(),
+  assignedTo: z.string().nullish(),
+  assignee: z.string().nullish(),
+  departmentId: z.string().nullish(),
+  department: z.string().nullish(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).nullish(),
+  status: z.enum(["Pending", "In Progress", "Completed"]).nullish(),
+  dueDate: isoDate.nullish(),
   progressPercentage: z.number().min(0).max(100).optional(),
   remarks: z.string().max(2000).optional().nullable(),
 });
@@ -286,69 +294,157 @@ function taskFlowTodayDateOnly(now = new Date()): string {
 
 async function listTasks(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
   const args = listTasksSchema.parse(asRecord(rawArgs));
+
+  if (!hasAnyPermissionUser(user, ["TASKS_VIEW_MY", "TASKS_VIEW_DEPARTMENT", "TASKS_VIEW_ALL"])) {
+    return { ok: false, permissionRequired: "TASKS_VIEW_MY | TASKS_VIEW_DEPARTMENT | TASKS_VIEW_ALL", message: "You do not have permission to view tasks." };
+  }
+
   const result = await managementJson<{ tasks: Record<string, unknown>[]; scope?: string }>("/api/tasks");
   if (!result.ok || !result.data) {
     const message = result.status === 403
       ? "You do not have permission to view tasks."
-      : "I couldn't retrieve your tasks right now. Please try again.";
+      : "I couldn't retrieve tasks right now. Please try again.";
     return { ok: false, permissionRequired: result.status === 403 ? "TASKS_VIEW_MY | TASKS_VIEW_DEPARTMENT | TASKS_VIEW_ALL" : undefined, message, statusCode: result.status };
   }
-  const namesResults = await Promise.allSettled([employeesForUser(user), departmentsForUser(user)]);
-  const employees = namesResults[0].status === "fulfilled" ? namesResults[0].value : null;
-  const departments = namesResults[1].status === "fulfilled" ? namesResults[1].value : null;
+  const [employees, departments] = await Promise.all([employeesForUser(user), departmentsForUser(user)]);
   const names = { employees: employeeNameMap(employees), departments: departmentNameMap(departments) };
+  const employeeById = new Map((employees ?? []).map((employee) => [employee.employeeId.toLowerCase(), employee]));
+  const departmentById = new Map((departments ?? []).map((department) => [department.departmentId.toLowerCase(), department]));
+
   let tasks = (result.data.tasks ?? []).map((task) => taskSummary(task, names));
   const today = taskFlowTodayDateOnly();
 
+  const isAdmin = user.role === "admin";
+  const assigneeInputs = [
+    ...(Array.isArray(args.assignees) ? args.assignees : []),
+    ...(Array.isArray(args.employees) ? args.employees : []),
+  ];
+  if (args.employee) assigneeInputs.push(args.employee);
+  if (args.employeeId) assigneeInputs.push(args.employeeId);
+  if (args.employeeName) assigneeInputs.push(args.employeeName);
+  if (args.assignee) assigneeInputs.push(args.assignee);
+  if (args.assignedTo) assigneeInputs.push(args.assignedTo);
+
+  const requestedEmployeeIds = new Set<string>();
+
+  if (!isAdmin) {
+    if (user.employeeId) requestedEmployeeIds.add(user.employeeId.toLowerCase());
+  } else if (assigneeInputs.length) {
+    for (const input of assigneeInputs) {
+      const trimmed = String(input).trim();
+      if (!trimmed) continue;
+      if (/^emp-/i.test(trimmed)) {
+        requestedEmployeeIds.add(trimmed.toUpperCase());
+        continue;
+      }
+      const resolved = await resolveEmployee(user, trimmed);
+      if (resolved.candidates && resolved.candidates.length > 1) {
+        return {
+          ok: false,
+          message: `Multiple employees matched "${trimmed}". Please specify the employee ID.`,
+          data: { candidates: resolved.candidates.slice(0, 5) },
+        };
+      }
+      if (!resolved.employee) {
+        return { ok: false, message: resolved.error ?? `No employee found for "${trimmed}".` };
+      }
+      requestedEmployeeIds.add(resolved.employee.employeeId.toLowerCase());
+    }
+  }
+
+  if (requestedEmployeeIds.size) {
+    tasks = tasks.filter((task) => task.assignedTo && requestedEmployeeIds.has(String(task.assignedTo).toLowerCase()));
+  }
+
   const departmentQuery = args.departmentId ?? args.department;
   if (departmentQuery) {
-    const resolved = await resolveDepartment(user, departmentQuery);
-    if (!resolved.department) return { ok: false, message: resolved.error ?? "Department not found or ambiguous.", data: resolved.candidates };
-    tasks = tasks.filter((task) => task.departmentId === resolved.department!.departmentId);
+    let departmentId = String(departmentQuery).trim();
+    if (!/^dep-/i.test(departmentId)) {
+      const resolved = await resolveDepartment(user, departmentQuery);
+      if (!resolved.department) return { ok: false, message: resolved.error ?? "Department not found or ambiguous.", data: resolved.candidates };
+      departmentId = resolved.department.departmentId;
+    }
+    tasks = tasks.filter((task) => String(task.departmentId ?? "").toLowerCase() === departmentId.toLowerCase());
   }
 
-  const assigneeQuery = args.assignedTo ?? args.assignee;
-  if (assigneeQuery) {
-    const resolved = await resolveEmployee(user, assigneeQuery);
-    if (!resolved.employee) return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
-    tasks = tasks.filter((task) => task.assignedTo === resolved.employee!.employeeId);
+  if (args.status) {
+    tasks = tasks.filter((task) => String(task.status ?? "").toLowerCase() === String(args.status).toLowerCase());
   }
+  if (args.priority) {
+    tasks = tasks.filter((task) => String(task.priority ?? "").toLowerCase() === String(args.priority).toLowerCase());
+  }
+  if (args.due === "today") {
+    tasks = tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today);
+  } else if (args.due === "overdue") {
+    tasks = tasks.filter((task) => isTaskOverdue(task, today));
+  }
+  if (args.dueDate) {
+    tasks = tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === args.dueDate);
+  }
+  if (args.fromDate) {
+    tasks = tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) >= String(args.fromDate));
+  }
+  if (args.toDate) {
+    tasks = tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) <= String(args.toDate));
+  }
+  if (args.assignedToday) {
+    tasks = tasks.filter((task) => String(task.assignedDate ?? "").slice(0, 10) === today);
+  }
+  if (args.completedToday) {
+    tasks = tasks.filter((task) => isTaskCompleted(task) && String(task.completionDate ?? "").slice(0, 10) === today);
+  }
+  if (args.search) {
+    const query = args.search.toLowerCase();
+    tasks = tasks.filter((task) =>
+      [task.taskId, task.title, task.assignedName ?? "", task.assignedTo ?? "", task.departmentName ?? "", task.departmentId ?? ""].join(" ").toLowerCase().includes(query),
+    );
+  }
+
+  tasks.sort((a, b) => sortRecent(a, b) || compareTaskDate(a.dueDate, b.dueDate));
+  const limit = args.limit ?? 100;
+  const limited = tasks.slice(0, limit);
+
+  const byEmployeeMap = new Map();
+  for (const task of tasks) {
+    const key = String(task.assignedTo ?? "unassigned").toLowerCase();
+    if (!byEmployeeMap.has(key)) {
+      const employee = task.assignedTo ? employeeById.get(String(task.assignedTo).toLowerCase()) : undefined;
+      const department = task.departmentId ? departmentById.get(String(task.departmentId).toLowerCase()) : undefined;
+      byEmployeeMap.set(key, {
+        employeeId: task.assignedTo ?? "Unassigned",
+        employeeName: task.assignedName ?? (employee ? employee.fullName : null),
+        departmentId: task.departmentId ?? null,
+        departmentName: task.departmentName ?? (department ? department.departmentName : null),
+        total: 0,
+        pending: 0,
+        inProgress: 0,
+        completed: 0,
+        overdue: 0,
+      });
+    }
+    const entry = byEmployeeMap.get(key);
+    entry.total += 1;
+    const status = String(task.status ?? "").toLowerCase();
+    if (status === "pending") entry.pending += 1;
+    else if (status === "in progress") entry.inProgress += 1;
+    else if (status === "completed") entry.completed += 1;
+    if (isTaskOverdue(task, today)) entry.overdue += 1;
+  }
+  const byEmployee = Array.from(byEmployeeMap.values()).sort((a, b) => b.total - a.total);
 
   const taskCounts = {
-    totalAssignedTasks: tasks.length,
-    pendingTasks: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && !isTaskOverdue(task, today)).length,
-    inProgressTasks: tasks.filter((task) => normalizeTaskStatus(task.status) === "In Progress" && !isTaskOverdue(task, today)).length,
+    totalTasks: tasks.length,
+    returnedTasks: limited.length,
+    uniqueEmployees: byEmployee.length,
+    pendingTasks: tasks.filter((task) => String(task.status ?? "").toLowerCase() === "pending" && !isTaskOverdue(task, today)).length,
+    inProgressTasks: tasks.filter((task) => String(task.status ?? "").toLowerCase() === "in progress" && !isTaskOverdue(task, today)).length,
     completedTasks: tasks.filter(isTaskCompleted).length,
     overdueTasks: tasks.filter((task) => isTaskOverdue(task, today)).length,
     tasksDueToday: tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today).length,
     openTasksDueToday: tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today && !isTaskCompleted(task)).length,
-    pendingTasksUpcoming: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && String(task.dueDate ?? "").slice(0, 10) > today).length,
-    pendingTasksUnscheduled: tasks.filter((task) => normalizeTaskStatus(task.status) === "Pending" && !String(task.dueDate ?? "").slice(0, 10)).length,
-    assignedToday: tasks.filter((task) => String(task.assignedDate ?? "").slice(0, 10) === today).length,
-    completedToday: tasks.filter((task) => isTaskCompleted(task) && String(task.completionDate ?? "").slice(0, 10) === today).length,
   };
 
-  if (args.assignedToday) tasks = tasks.filter((task) => String(task.assignedDate ?? "").slice(0, 10) === today);
-  if (args.completedToday) tasks = tasks.filter((task) => isTaskCompleted(task) && String(task.completionDate ?? "").slice(0, 10) === today);
-  if (args.search) {
-    const query = args.search.toLowerCase();
-    tasks = tasks.filter((task) =>
-      [task.taskId, task.title, task.assignedName ?? "", task.assignedTo ?? ""].join(" ").toLowerCase().includes(query),
-    );
-  }
-  if (args.status) {
-    tasks = tasks.filter((task) =>
-      args.status === "Overdue" ? isTaskOverdue(task, today) : normalizeTaskStatus(task.status) === args.status,
-    );
-  }
-  if (args.priority) tasks = tasks.filter((task) => String(task.priority) === args.priority);
-  if (args.due === "today") tasks = tasks.filter((task) => String(task.dueDate ?? "").slice(0, 10) === today);
-  if (args.due === "overdue") tasks = tasks.filter((task) => isTaskOverdue(task, today));
-
-  tasks.sort((a, b) => sortRecent(a, b) || compareTaskDate(a.dueDate, b.dueDate));
-  const limit = args.limit ?? 20;
-  const limited = tasks.slice(0, limit);
-  const card: ChatTaskCard = {
+  const card = {
     type: "tasks",
     title: args.status ? `${args.status} tasks` : args.due === "today" ? "Today's tasks" : args.due === "overdue" ? "Overdue tasks" : "Tasks",
     subtitle: `Showing ${limited.length} of ${tasks.length} result${tasks.length === 1 ? "" : "s"}`,
@@ -356,8 +452,15 @@ async function listTasks(user: AgentUser, rawArgs: unknown): Promise<ToolExecuti
     total: tasks.length,
     emptyMessage: "No tasks match those filters.",
   };
-  return { ok: true, message: `Found ${tasks.length} task${tasks.length === 1 ? "" : "s"}.`, data: { total: tasks.length, tasks: limited, summary: taskCounts }, card };
+
+  return {
+    ok: true,
+    message: `Found ${tasks.length} task${tasks.length === 1 ? "" : "s"}.`,
+    data: { total: tasks.length, tasks: limited, summary: taskCounts, byEmployee, scope: result.data.scope },
+    card: card as ChatTaskCard,
+  };
 }
+
 
 async function searchEmployees(user: AgentUser, rawArgs: unknown): Promise<ToolExecutionResult> {
   const args = searchEmployeesSchema.parse(asRecord(rawArgs));
@@ -598,7 +701,7 @@ async function proposeAssignTask(user: AgentUser, rawArgs: unknown): Promise<Too
   const assignee = args.assignedTo ?? args.assignee;
   let assigneeName = user.name;
   if (assignee) {
-    const resolved = await resolveEmployee(user, assignee);
+    const resolved = await resolveEmployee(user, String(assignee));
     if (!resolved.employee) {
       return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
     }
@@ -612,7 +715,7 @@ async function proposeAssignTask(user: AgentUser, rawArgs: unknown): Promise<Too
 
   const departmentQuery = args.departmentId ?? args.department;
   if (departmentQuery) {
-    if (/^dep-\d+$/i.test(departmentQuery)) {
+    if (/^dep-\d+$/i.test(String(departmentQuery))) {
       payload.departmentId = departmentQuery.toUpperCase();
     } else {
       const resolved = await resolveDepartment(user, departmentQuery);
@@ -651,14 +754,14 @@ async function proposeUpdateTask(user: AgentUser, rawArgs: unknown): Promise<Too
   if (args.remarks !== undefined) payload.remarks = args.remarks;
 
   const assignee = args.assignedTo ?? args.assignee;
-  if (assignee !== undefined) {
-    const resolved = await resolveEmployee(user, assignee);
+  if (assignee != null) {
+    const resolved = await resolveEmployee(user, String(assignee));
     if (!resolved.employee) return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
     payload.assignedTo = resolved.employee.employeeId;
   }
   const departmentQuery = args.departmentId ?? args.department;
-  if (departmentQuery !== undefined) {
-    if (/^dep-\d+$/i.test(departmentQuery)) payload.departmentId = departmentQuery.toUpperCase();
+  if (departmentQuery != null && String(departmentQuery).trim() !== "") {
+    if (/^dep-\d+$/i.test(String(departmentQuery))) payload.departmentId = departmentQuery.toUpperCase();
     else {
       const resolved = await resolveDepartment(user, departmentQuery);
       if (!resolved.department) return { ok: false, message: resolved.error ?? "Department not found or ambiguous.", data: resolved.candidates };
@@ -697,7 +800,7 @@ async function createTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecut
 
   const assignee = args.assignedTo ?? args.assignee;
   if (assignee) {
-    const resolved = await resolveEmployee(user, assignee);
+    const resolved = await resolveEmployee(user, String(assignee));
     if (!resolved.employee) {
       return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates, permissionRequired: resolved.error ? undefined : "EMPLOYEES_VIEW_DIRECTORY" };
     }
@@ -713,7 +816,7 @@ async function createTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecut
 
   const departmentQuery = args.departmentId ?? args.department;
   if (departmentQuery) {
-    if (/^dep-\d+$/i.test(departmentQuery)) {
+    if (/^dep-\d+$/i.test(String(departmentQuery))) {
       payload.departmentId = departmentQuery.toUpperCase();
     } else {
       const resolved = await resolveDepartment(user, departmentQuery);
@@ -814,19 +917,17 @@ async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>,
     };
   }
   const departments = departmentResult.data.departments ?? [];
-  const employees = employeeResult.ok && employeeResult.data ? employeeResult.data.employees ?? [] : [];
-  let suggestedEmployeeId = args.employeeId ?? "";
-  if (!suggestedEmployeeId) {
-    let max = 0;
-    for (const employee of employees) {
-      const match = String(employee.employeeId ?? "").match(/^EMP-(\\d+)$/i);
-      if (match) {
-        const value = parseInt(match[1], 10);
-        if (value > max) max = value;
-      }
-    }
-    suggestedEmployeeId = `EMP-${String(max + 1).padStart(3, "0")}`;
+  const nextIdResult = await managementJson<{ employeeId: string }>("/api/employees/next-id");
+  if (!nextIdResult.ok || !nextIdResult.data?.employeeId) {
+    return {
+      ok: false,
+      message: nextIdResult.status === 403
+        ? "You do not have permission to generate an employee ID."
+        : "Unable to generate an employee ID. No employee was created.",
+      statusCode: nextIdResult.status >= 400 ? nextIdResult.status : 503,
+    };
   }
+  const suggestedEmployeeId = nextIdResult.data.employeeId;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi" }).format(new Date());
   const suggestedJoiningDate = args.joiningDate ?? today;
   const selectedDepartment = departments.find((department) =>
@@ -836,11 +937,11 @@ async function employeeFormResponse(args: ReturnType<typeof employeeCreateArgs>,
   const card: ChatEmployeeFormCard = {
     type: "employee_form",
     title: "Add a new employee",
-    message: `${message} The management system assigns an employee ID when the field is left blank.`,
+    message: `${message} The employee ID is generated automatically by the management system and cannot be edited.`,
     fields: [
       { key: "fullName", label: "Full name", type: "text", required: true, defaultValue: args.fullName ?? "", placeholder: "e.g. Ali Raza" },
       { key: "email", label: "Work email", type: "email", required: true, defaultValue: args.email ?? "", placeholder: "e.g. ali.raza@taskflow.com" },
-      { key: "employeeId", label: "Employee ID", type: "text", required: false, defaultValue: suggestedEmployeeId, placeholder: "e.g. EMP-001" },
+      { key: "employeeId", label: "Employee ID", type: "text", required: false, defaultValue: suggestedEmployeeId, placeholder: "e.g. EMP-001", readOnly: true, help: "Automatically generated by the management system." },
       {
         key: "departmentId",
         label: "Department",
@@ -865,6 +966,7 @@ async function createEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolEx
     return { ok: false, permissionRequired: "ADMIN", message: "Only administrators can create employees.", statusCode: 403 };
   }
   const args = employeeCreateArgs(asRecord(rawArgs));
+  const submittedEmployeeId = args.employeeId;
   if (!args.fullName) {
     return { ok: false, message: "I can help you add a new employee. What is the employee's full name?", statusCode: 400 };
   }
@@ -878,7 +980,6 @@ async function createEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolEx
   const payload = createEmployeeSchema.parse({
     fullName: args.fullName,
     email: args.email,
-    employeeId: args.employeeId ?? undefined,
     departmentId: args.departmentId ?? undefined,
     designation: args.designation ?? undefined,
     accountStatus: args.accountStatus ?? undefined,
@@ -943,7 +1044,11 @@ async function createEmployee(user: AgentUser, rawArgs: unknown): Promise<ToolEx
     `- Email: ${employeeSummary.email}`,
     ...(employeeSummary.accountStatus ? [`- Status: ${employeeSummary.accountStatus}`] : []),
   ];
-  const message = `Employee successfully added.\n\n${details.join("\n")}\n\nThe employee record is now available in the Management System.`;
+  const idChanged = Boolean(submittedEmployeeId && submittedEmployeeId.toLowerCase() !== employeeSummary.employeeId.toLowerCase());
+  const idNote = idChanged
+    ? `\n\nThe requested ID ${submittedEmployeeId} was no longer available, so the management system assigned ${employeeSummary.employeeId}.`
+    : "";
+  const message = `Employee successfully added.\n\n${details.join("\n")}${idNote}\n\nThe employee record is now available in the Management System.`;
   const card: ChatConfirmationCard = {
     type: "confirmation",
     title: "Employee created",
@@ -996,14 +1101,14 @@ async function updateTask(user: AgentUser, rawArgs: unknown): Promise<ToolExecut
   if (args.remarks !== undefined) payload.remarks = args.remarks;
 
   const assignee = args.assignedTo ?? args.assignee;
-  if (assignee !== undefined) {
-    const resolved = await resolveEmployee(user, assignee);
+  if (assignee != null) {
+    const resolved = await resolveEmployee(user, String(assignee));
     if (!resolved.employee) return { ok: false, message: resolved.error ?? "Employee not found or ambiguous.", data: resolved.candidates };
     payload.assignedTo = resolved.employee.employeeId;
   }
   const departmentQuery = args.departmentId ?? args.department;
-  if (departmentQuery !== undefined) {
-    if (/^dep-\d+$/i.test(departmentQuery)) {
+  if (departmentQuery != null && String(departmentQuery).trim() !== "") {
+    if (/^dep-\d+$/i.test(String(departmentQuery))) {
       payload.departmentId = departmentQuery.toUpperCase();
     } else {
       const resolved = await resolveDepartment(user, departmentQuery);
@@ -1130,7 +1235,7 @@ async function proposeUpdateEmployee(user: AgentUser, rawArgs: unknown): Promise
   const { employee: target, department, departmentId, ...fields } = args;
   const patch: Record<string, unknown> = { ...fields };
   const departmentQuery = departmentId ?? department;
-  if (departmentQuery !== undefined) {
+  if (departmentQuery != null && String(departmentQuery).trim() !== "") {
     const resolved = await resolveDepartment(user, departmentQuery);
     if (!resolved.department) return { ok: false, message: resolved.error ?? "I couldn't identify that department.", data: resolved.candidates };
     patch.departmentId = resolved.department.departmentId;
@@ -1275,18 +1380,27 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
 export function buildToolDefinitions(user: AgentUser) {
   const tools: ReturnType<typeof tool>[] = [];
   if (hasAnyPermissionUser(user, ["TASKS_VIEW_MY", "TASKS_VIEW_DEPARTMENT", "TASKS_VIEW_ALL"])) {
-    tools.push(tool("list_tasks", "List tasks visible to the user, optionally filtered by status, priority, department, assignee, due date or search text.", objectSchema({
-      search: { type: "string", description: "Match task ID, title or assignee." },
+    tools.push(tool("list_tasks", "List tasks visible to the user. Admins can retrieve all organization tasks or filter by employee, department, status, priority, due date and date range; employees are always restricted to their own tasks. Resolve employee names to actual employee IDs before filtering.", objectSchema({
+      scope: { type: "string", enum: ["my_tasks", "employee_tasks", "department_tasks", "all_tasks"], description: "Task scope. Employees are always restricted to my_tasks." },
+      employee: { type: "string", description: "Employee name, email or ID (admin only)." },
+      employeeId: { type: "string", description: "Employee ID (admin only)." },
+      employeeName: { type: "string", description: "Employee name to resolve to an employee ID (admin only)." },
+      employees: { type: "array", items: { type: "string" }, description: "Multiple employee names or IDs (admin only)." },
+      assignee: { type: "string", description: "Employee name, email or ID (admin only)." },
+      assignedTo: { type: "string", description: "Employee ID (admin only)." },
+      assignees: { type: "array", items: { type: "string" }, description: "Multiple employee names or IDs (admin only)." },
+      department: { type: "string", description: "Department name or ID." },
+      departmentId: { type: "string", description: "Department ID." },
       status: { type: "string", enum: ["Pending", "In Progress", "Completed", "Overdue"] },
       priority: { type: "string", enum: ["Low", "Medium", "High", "Urgent"] },
-      department: { type: "string", description: "Department name or ID." },
-      departmentId: { type: "string" },
-      assignee: { type: "string", description: "Employee name, email or ID." },
-      assignedTo: { type: "string" },
       due: { type: "string", enum: ["today", "overdue"] },
+      dueDate: { type: "string", pattern: datePattern.source, description: "YYYY-MM-DD" },
+      fromDate: { type: "string", pattern: datePattern.source, description: "Start of due-date range (YYYY-MM-DD)." },
+      toDate: { type: "string", pattern: datePattern.source, description: "End of due-date range (YYYY-MM-DD)." },
       assignedToday: { type: "boolean" },
       completedToday: { type: "boolean" },
-      limit: { type: "number", minimum: 1, maximum: 50 },
+      search: { type: "string", description: "Match task ID, title, assignee or department." },
+      limit: { type: "number", minimum: 1, maximum: 500 },
     })));
   }
   if (hasPermission(user, "EMPLOYEES_VIEW_DIRECTORY")) {

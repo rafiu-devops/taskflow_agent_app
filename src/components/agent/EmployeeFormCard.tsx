@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import type { ChatEmployeeFormCard, ToolResultPart } from "@/types/agent";
 import ConfirmCard from "./ConfirmCard";
@@ -20,6 +20,7 @@ const employeeFormCardSchema = z.object({
         defaultValue: z.string().optional(),
         placeholder: z.string().optional(),
         help: z.string().optional(),
+        readOnly: z.boolean().optional(),
       }),
     ),
   }).optional(),
@@ -47,6 +48,33 @@ function EmployeeFormCardBody({ card, conversationId }: { card: ChatEmployeeForm
   const [reviewing, setReviewing] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [idLoading, setIdLoading] = useState(true);
+  const [idError, setIdError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/employees/next-id", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || typeof data.employeeId !== "string" || !data.employeeId) {
+          throw new Error(typeof data.error === "string" ? data.error : "Unable to generate an employee ID.");
+        }
+        if (!cancelled) {
+          setValues((current) => ({ ...current, employeeId: data.employeeId }));
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setIdError(reason instanceof Error ? reason.message : "Unable to generate an employee ID.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIdLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function setValue(key: string, value: string) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -58,6 +86,18 @@ function EmployeeFormCardBody({ card, conversationId }: { card: ChatEmployeeForm
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (idLoading) {
+      setError("Employee ID is still being generated. Please wait.");
+      return;
+    }
+    if (idError) {
+      setError(idError);
+      return;
+    }
+    if (!String(values.employeeId ?? "").trim()) {
+      setError("A valid employee ID is required before submission.");
+      return;
+    }
     const collected: Record<string, string> = {};
     for (const field of card.fields) {
       const value = (values[field.key] ?? "").trim();
@@ -251,9 +291,13 @@ function EmployeeFormCardBody({ card, conversationId }: { card: ChatEmployeeForm
                   type={field.type === "email" ? "email" : field.type === "date" ? "date" : "text"}
                   required={field.required}
                   value={values[field.key] ?? ""}
-                  placeholder={field.placeholder}
-                  onChange={(event) => setValue(field.key, event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)] outline-none"
+                  placeholder={idLoading && field.key === "employeeId" ? "Generating employee ID..." : field.placeholder}
+                  readOnly={field.readOnly}
+                  onChange={(event) => {
+                    if (field.readOnly) return;
+                    setValue(field.key, event.target.value);
+                  }}
+                  className={`mt-1 w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--ink)] outline-none ${field.readOnly ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-[var(--surface)]"}`}
                 />
               )}
               {field.key === "departmentId" && values[field.key] ? (
@@ -262,9 +306,10 @@ function EmployeeFormCardBody({ card, conversationId }: { card: ChatEmployeeForm
               {field.help ? <span className="mt-1 block text-xs text-[var(--ink-muted)]">{field.help}</span> : null}
             </label>
           ))}
+          {idError ? <p role="alert" className="text-sm text-rose-700">{idError}</p> : null}
           {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
           <div className="flex gap-2">
-            <button type="submit" disabled={busy} className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+            <button type="submit" disabled={busy || idLoading || Boolean(idError)} className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
               Review details
             </button>
             <button type="button" onClick={() => { setValues(initialValues()); setError(null); }} className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--ink-muted)]">

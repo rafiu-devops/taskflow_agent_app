@@ -101,6 +101,7 @@ export interface ChatEmployeeFormField {
   defaultValue?: string;
   placeholder?: string;
   help?: string;
+  readOnly?: boolean;
 }
 
 export interface ChatEmployeeFormCard {
