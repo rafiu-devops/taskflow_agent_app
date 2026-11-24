@@ -174,7 +174,15 @@ export default function ChatClient({
         }
         if (data.title) setTitle(data.title);
 
-        if (data.message) {
+        if (!response.ok) {
+          const message =
+            (typeof data.error === "string" && data.error.trim() && data.error) ||
+            (typeof data.message === "string" && data.message.trim() && data.message) ||
+            "Something went wrong. Please try again.";
+          setActionError(message);
+          playSound("error");
+          setMessages((current) => current.filter((message) => message.id !== tempId).concat(optimistic));
+        } else if (data.message) {
           const normalized: ChatMessage = {
             id: String(data.message.id ?? `${tempId}-assistant`),
             role: data.message.role === "assistant" ? "assistant" : "user",
@@ -194,15 +202,6 @@ export default function ChatClient({
           setMessages((current) =>
             current.filter((message) => message.id !== tempId).concat(optimistic),
           );
-        }
-
-        if (!response.ok) {
-          const message =
-            (typeof data.error === "string" && data.error.trim() && data.error) ||
-            (typeof data.message === "string" && data.message.trim() && data.message) ||
-            "Something went wrong. Please try again.";
-          setActionError(message);
-          playSound("error");
         }
       } catch (reason) {
         if (reason instanceof DOMException && reason.name === "AbortError") {
