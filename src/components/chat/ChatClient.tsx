@@ -306,7 +306,7 @@ export default function ChatClient({
           actionError ? (
             <p
               role="alert"
-              className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12.5px] leading-5 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+              className="mt-2 rounded-xl border border-amber-700 bg-amber-700 px-3.5 py-2.5 text-[12.5px] leading-5 text-white dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
             >
               {actionError}
             </p>
