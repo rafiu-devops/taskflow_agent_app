@@ -67,6 +67,7 @@ export default function ChatClient({
   const abortRef = useRef<AbortController | null>(null);
   const announcedRef = useRef<Set<string>>(new Set());
   const messagesRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sentInitialRef = useRef(false);
 
@@ -108,13 +109,22 @@ export default function ChatClient({
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
   useEffect(() => {
-    const el = messagesRef.current;
-    if (el && isNearBottom()) scrollToBottom();
+    if (isNearBottom()) scrollToBottom();
   }, [messages.length, sending, isNearBottom, scrollToBottom]);
+
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (isNearBottom()) scrollToBottom();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isNearBottom, scrollToBottom]);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -398,6 +408,7 @@ export default function ChatClient({
             );
           })}
           {sending && <TypingIndicator />}
+          <div ref={bottomRef} className="h-px w-full" aria-hidden="true" />
         </div>
 
         {showScrollButton && (
